@@ -197,7 +197,70 @@ async def analyze_project_with_rag(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"RAG analysis failed: {str(e)}")
 
+# Add this endpoint to backend/app/routers/enhanced_projects.py
+# Place it after the analyze-with-rag endpoint
 
+@router.post("/{project_id}/generate-questions")
+async def generate_questions(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user)
+):
+    """
+    Generate clarifying questions for a project
+    This is a simplified version that works with the existing workflow
+    """
+    try:
+        result = await db.execute(
+            select(ProjectModel).where(
+                ProjectModel.id == project_id,
+                ProjectModel.owner_id == user.id
+            )
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Use the enhanced AI engine to analyze and generate questions
+        files_result = await db.execute(
+            select(ProjectFile).where(ProjectFile.project_id == project_id)
+        )
+        files = files_result.scalars().all()
+        
+        uploaded_content = []
+        for file in files:
+            content = await extract_text_from_file(file.file_path, file.file_name)
+            if content:
+                uploaded_content.append(content)
+        
+        combined_content = "\n\n".join(uploaded_content) if uploaded_content else None
+        
+        project_data = {
+            "id": str(project.id),
+            "name": project.name,
+            "domain": project.domain,
+            "complexity": project.complexity,
+            "tech_stack": project.tech_stack,
+            "use_cases": project.use_cases,
+            "compliance": project.compliance,
+            "duration": project.duration
+        }
+        
+        # Use analyze_project_with_rag which generates questions
+        analysis_result = await enhanced_ai_engine.analyze_project_with_rag(
+            project_data=project_data,
+            uploaded_content=combined_content
+        )
+        
+        return {
+            "project_id": str(project_id),
+            "questions": analysis_result.get("questions", []),
+            "initial_analysis": analysis_result.get("initial_analysis", {})
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+    
 @router.post("/{project_id}/generate-scope-with-rag")
 async def generate_scope_with_rag(
     project_id: uuid.UUID,

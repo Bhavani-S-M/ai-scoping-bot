@@ -72,33 +72,37 @@ const ProjectWorkflow = () => {
   // STEP 3: Generate Comprehensive Scope
   // ============================================================================
   
-  const handleGenerateScope = async () => {
-    setLoading(true)
-    setError('')
+  // In frontend/src/pages/ProjectWorkflow.jsx
+// Find the handleGenerateScope function (around line 97) and replace it with:
+
+const handleGenerateScope = async () => {
+  setLoading(true)
+  setError('')
+  
+  try {
+    // Prepare answered questions
+    const answeredQuestions = questions
+      .filter(q => answers[q.id])
+      .map(q => ({
+        question_id: q.id,
+        question: q.question,
+        answer: answers[q.id]
+      }))
     
-    try {
-      // Prepare answered questions
-      const answeredQuestions = questions
-        .filter(q => answers[q.id])
-        .map(q => ({
-          question_id: q.id,
-          question: q.question,
-          answer: answers[q.id]
-        }))
-      
-      const response = await axios.post(
-        `/projects/${projectId}/generate-scope`,
-        { answered_questions: answeredQuestions }
-      )
-      
-      setScope(response.data.scope)
-      setCurrentStep(3)
-    } catch (err) {
-      setError('Failed to generate scope: ' + (err.response?.data?.detail || err.message))
-    } finally {
-      setLoading(false)
-    }
+    // FIX: Use the correct endpoint with /api prefix
+    const response = await axios.post(
+      `/api/projects/${projectId}/generate-scope-with-rag`,  // Changed from /projects/
+      { answered_questions: answeredQuestions }
+    )
+    
+    setScope(response.data.scope)  // The response has a 'scope' property
+    setCurrentStep(3)
+  } catch (err) {
+    setError('Failed to generate scope: ' + (err.response?.data?.detail || err.message))
+  } finally {
+    setLoading(false)
   }
+}
 
   // ============================================================================
   // STEP 4: Chat Refinement
