@@ -1,555 +1,565 @@
 //frontend/src/pages/EnhancedProjectWorkflow.jsx
 import React, { useState, useEffect } from 'react';
-import { FileUp, Bot, CheckCircle, Download, MessageCircle, TrendingUp, AlertTriangle, Layers } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { 
+  FileUp, Bot, CheckCircle, Download, MessageCircle, 
+  TrendingUp, AlertTriangle, Layers, Users, Clock,
+  DollarSign, Eye, EyeOff, RefreshCw, Save
+} from 'lucide-react';
+import { useScope } from '../contexts/ScopeContext';
+import RefinementBar from '../components/RefinementBar';
+import ArchitectureDiagram from '../components/ArchitectureDiagram';
+import ExportButtons from '../components/ExportButtons';
+import api from '../config/axios';
 
 const EnhancedProjectWorkflow = () => {
-  const [projectId] = useState('demo-project-123');
+  const { projectId } = useParams();
+  const { 
+    scope, setScope, updateScope, loading, setLoading,
+    refinements, refinementCount, setError 
+  } = useScope();
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [extractedEntities, setExtractedEntities] = useState(null);
-  const [scope, setScope] = useState(null);
-  const [chatMessage, setChatMessage] = useState('');
-  const [chatHistory, setChatHistory] = useState([]);
-  const [loading, setLoading] = useState(false);
-  
+  const [showFullScope, setShowFullScope] = useState(false);
+  const [activeDiagram, setActiveDiagram] = useState('architecture');
+
   const steps = [
-    { id: 1, name: 'Upload Document', icon: FileUp },
-    { id: 2, name: 'AI Analysis', icon: Bot },
-    { id: 3, name: 'Comprehensive Scope', icon: Layers },
-    { id: 4, name: 'Refine', icon: MessageCircle },
-    { id: 5, name: 'Finalize & Export', icon: CheckCircle }
+    { id: 1, name: 'Upload Document', icon: FileUp, description: 'Upload RFP/SOW/Requirements' },
+    { id: 2, name: 'AI Analysis', icon: Bot, description: 'Entity extraction & parsing' },
+    { id: 3, name: 'Comprehensive Scope', icon: Layers, description: 'AI-generated scope with RAG' },
+    { id: 4, name: 'Real-time Refinement', icon: MessageCircle, description: 'Interactive adjustments' },
+    { id: 5, name: 'Finalize & Export', icon: CheckCircle, description: 'Export & KB learning' }
   ];
 
-  // Demo scope data
-  const demoScope = {
-    overview: {
-      project_summary: "Comprehensive web application development for healthcare patient management system with AI-powered diagnostics assistance.",
-      key_objectives: [
-        "Develop secure patient management platform",
-        "Integrate AI diagnostic support",
-        "Ensure HIPAA compliance",
-        "Enable real-time data synchronization"
-      ],
-      success_metrics: [
-        "95% system uptime",
-        "< 2 second page load time",
-        "HIPAA compliance certification",
-        "Support for 10,000+ concurrent users"
-      ]
-    },
-    timeline: {
-      total_duration_months: 6,
-      phases: [
-        {
-          phase_name: "Planning & Requirements",
-          duration_weeks: 4,
-          start_week: 1,
-          end_week: 4,
-          milestones: ["Requirements finalized", "Architecture approved", "Security plan ready"]
-        },
-        {
-          phase_name: "Design & Prototyping",
-          duration_weeks: 4,
-          start_week: 5,
-          end_week: 8,
-          milestones: ["UI/UX designs approved", "Database schema finalized", "API specifications ready"]
-        },
-        {
-          phase_name: "Development",
-          duration_weeks: 12,
-          start_week: 9,
-          end_week: 20,
-          milestones: ["Core features complete", "AI integration done", "Testing environment ready"]
-        },
-        {
-          phase_name: "Testing & QA",
-          duration_weeks: 4,
-          start_week: 21,
-          end_week: 24,
-          milestones: ["All tests passed", "Security audit complete", "Performance optimized"]
-        }
-      ]
-    },
-    resources: [
-      { role: "Project Manager", count: 1, effort_months: 6, monthly_rate: 10000, total_cost: 60000 },
-      { role: "Business Analyst", count: 1, effort_months: 3, monthly_rate: 8000, total_cost: 24000 },
-      { role: "UI/UX Designer", count: 2, effort_months: 2, monthly_rate: 7000, total_cost: 28000 },
-      { role: "Frontend Developer", count: 2, effort_months: 5, monthly_rate: 8000, total_cost: 80000 },
-      { role: "Backend Developer", count: 3, effort_months: 5, monthly_rate: 8500, total_cost: 127500 },
-      { role: "QA Engineer", count: 2, effort_months: 3, monthly_rate: 7000, total_cost: 42000 },
-      { role: "DevOps Engineer", count: 1, effort_months: 4, monthly_rate: 9000, total_cost: 36000 }
-    ],
-    cost_breakdown: {
-      total_cost: 397500,
-      contingency_percentage: 15,
-      contingency_amount: 59625
-    },
-    diagrams: {
-      architecture: {
-        code: `graph TD
-    A[Patient/Healthcare Provider] --> B[Web Frontend]
-    A --> C[Mobile App]
-    B --> D[API Gateway]
-    C --> D
-    D --> E[Authentication Service]
-    D --> F[Patient Management Service]
-    D --> G[AI Diagnostic Service]
-    F --> H[(PostgreSQL Database)]
-    G --> I[ML Model Server]
-    G --> J[External Medical APIs]
-    D --> K[File Storage S3]
-    
-    style B fill:#e1f5ff
-    style D fill:#fff4e1
-    style F fill:#ffe1f5
-    style G fill:#e1ffe1`
-      },
-      workflow: {
-        code: `flowchart LR
-    A[Requirements] --> B[Design]
-    B --> C[Dev: Frontend]
-    B --> D[Dev: Backend]
-    C --> E[Integration]
-    D --> E
-    E --> F[Testing]
-    F --> G[Deployment]
-    G --> H[Monitoring]`
-      }
-    },
-    metadata: {
-      confidence_score: 0.87,
-      rag_sources_count: 3,
-      version: '2.0'
-    },
-    assumptions: [
-      "Client will provide timely feedback and approvals",
-      "All required resources will be available as planned",
-      "HIPAA compliance requirements are clearly documented",
-      "Third-party medical APIs will be available"
-    ]
-  };
-
-  useEffect(() => {
-    // Simulate initial data loading
-    if (currentStep >= 3) {
-      setScope(demoScope);
-    }
-  }, [currentStep]);
-
-  const handleFileUpload = (e) => {
+  // Handle file upload and entity extraction
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setUploadedFile(file);
-      setLoading(true);
-      
-      // Simulate entity extraction
-      setTimeout(() => {
-        setExtractedEntities({
-          project_type: "Web Application",
-          domain: "Healthcare",
-          complexity: "complex",
-          deliverables: ["Patient Management System", "AI Diagnostics", "Mobile App"],
-          tech_stack: ["React", "Node.js", "PostgreSQL", "TensorFlow"],
-          compliance_requirements: ["HIPAA", "GDPR"],
-          estimated_duration: "6 months"
-        });
-        setLoading(false);
-        setCurrentStep(2);
-      }, 2000);
+    if (!file) return;
+
+    setUploadedFile(file);
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post(`/api/projects/${projectId}/upload-document`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      setExtractedEntities(response.data.extracted_entities);
+      setCurrentStep(2);
+    } catch (error) {
+      setError('Failed to upload and process document');
+      console.error('Upload error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const generateScope = () => {
+  // Generate comprehensive scope
+  const generateScope = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setScope(demoScope);
+    try {
+      const response = await api.post(`/api/projects/${projectId}/generate-comprehensive-scope`);
+      setScope(response.data.scope);
       setCurrentStep(3);
+    } catch (error) {
+      setError('Failed to generate scope');
+      console.error('Scope generation error:', error);
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
-  const handleRefinement = () => {
-    if (!chatMessage.trim()) return;
-    
+  // Handle scope refinement
+  const handleRefinement = async (message) => {
+    if (!message.trim() || !scope) return;
+
     setLoading(true);
-    const userMsg = chatMessage;
-    setChatMessage('');
-    
-    // Simulate AI response
-    setTimeout(() => {
-      const newHistory = [
-        ...chatHistory,
-        { role: 'user', message: userMsg },
-        { 
-          role: 'assistant', 
-          message: `I've updated the scope based on your request: "${userMsg}"`,
-          changes: ['Timeline adjusted', 'Resources optimized', 'Costs recalculated']
-        }
-      ];
-      setChatHistory(newHistory);
+    try {
+      const response = await api.post('/api/refinement/refine', {
+        message,
+        current_scope: scope,
+        project_id: projectId
+      });
+
+      updateScope(
+        response.data.updated_scope,
+        response.data.changes_made,
+        response.data.intent
+      );
+    } catch (error) {
+      setError('Failed to process refinement');
+      console.error('Refinement error:', error);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
-  const renderMermaidDiagram = (code) => {
-    return (
-      <div className="bg-white p-4 rounded border">
-        <div className="font-mono text-sm whitespace-pre-wrap bg-gray-50 p-4 rounded">
-          {code}
-        </div>
-        <p className="text-xs text-gray-500 mt-2">
-          💡 In production, this renders as an interactive diagram
-        </p>
-      </div>
-    );
+  // Finalize scope and update KB
+  const finalizeScope = async () => {
+    setLoading(true);
+    try {
+      await api.post(`/api/projects/${projectId}/finalize`, {
+        scope_data: scope,
+        approval_status: 'approved',
+        user_feedback: 'Scope finalized via enhanced workflow'
+      });
+      
+      setCurrentStep(5);
+    } catch (error) {
+      setError('Failed to finalize scope');
+      console.error('Finalization error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Render progress steps
+  const renderProgressSteps = () => (
+    <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+      <div className="flex items-center justify-between">
+        {steps.map((step, index) => {
+          const StepIcon = step.icon;
+          const isCompleted = currentStep > step.id;
+          const isCurrent = currentStep === step.id;
+          
+          return (
+            <React.Fragment key={step.id}>
+              <div className="flex flex-col items-center text-center">
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${
+                  isCompleted ? 'bg-green-500 text-white' :
+                  isCurrent ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
+                  'bg-gray-200 text-gray-400'
+                }`}>
+                  <StepIcon size={28} />
+                </div>
+                <span className="mt-3 text-sm font-medium max-w-[100px]">{step.name}</span>
+                <span className="text-xs text-gray-500 mt-1 max-w-[100px]">{step.description}</span>
+              </div>
+              {index < steps.length - 1 && (
+                <div className={`flex-1 h-2 mx-4 rounded-full transition-all duration-300 ${
+                  isCompleted ? 'bg-green-500' : 'bg-gray-200'
+                }`} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // Render step 1: Document upload
+  const renderDocumentUpload = () => (
+    <div className="bg-white rounded-lg shadow-lg p-8">
+      <h2 className="text-2xl font-bold mb-4 flex items-center gap-3">
+        <FileUp className="text-blue-500" />
+        Upload Project Document
+      </h2>
+      <p className="text-gray-600 mb-6 text-lg">
+        Upload your RFP, SOW, or requirements document. Our AI will extract key entities and prepare for intelligent scoping.
+      </p>
+      
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors bg-gray-50">
+        <input
+          type="file"
+          onChange={handleFileUpload}
+          accept=".pdf,.docx,.doc,.txt"
+          className="hidden"
+          id="file-upload"
+        />
+        <label htmlFor="file-upload" className="cursor-pointer block">
+          <FileUp size={64} className="mx-auto text-gray-400 mb-4" />
+          <p className="text-xl font-medium mb-2">Click to upload or drag and drop</p>
+          <p className="text-gray-500">PDF, DOCX, or TXT (Max 10MB)</p>
+          <p className="text-sm text-gray-400 mt-2">
+            Supports: Requirements documents, RFPs, SOWs, Project briefs
+          </p>
+        </label>
+      </div>
+
+      {loading && (
+        <div className="mt-6 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Extracting entities from document...</p>
+        </div>
+      )}
+    </div>
+  );
+
+  // Render step 2: Extracted entities
+  const renderExtractedEntities = () => (
+    <div className="bg-white rounded-lg shadow-lg p-8">
+      <h2 className="text-2xl font-bold mb-4 flex items-center gap-3">
+        <Bot className="text-green-500" />
+        AI Analysis Complete
+      </h2>
+      <p className="text-gray-600 mb-6">
+        Successfully extracted project information from your document. Review and proceed to generate comprehensive scope.
+      </p>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+          <h3 className="font-semibold text-lg mb-3 text-blue-800">📋 Project Details</h3>
+          <div className="space-y-2">
+            <p><strong>Type:</strong> {extractedEntities.project_type}</p>
+            <p><strong>Domain:</strong> {extractedEntities.domain}</p>
+            <p><strong>Complexity:</strong> 
+              <span className={`ml-2 px-2 py-1 rounded text-xs ${
+                extractedEntities.complexity === 'complex' ? 'bg-red-100 text-red-800' :
+                extractedEntities.complexity === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                'bg-green-100 text-green-800'
+              }`}>
+                {extractedEntities.complexity}
+              </span>
+            </p>
+            <p><strong>Duration:</strong> {extractedEntities.estimated_duration}</p>
+          </div>
+        </div>
+        
+        <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+          <h3 className="font-semibold text-lg mb-3 text-green-800">🔧 Technology & Compliance</h3>
+          <div className="space-y-2">
+            <p><strong>Tech Stack:</strong> 
+              <div className="flex flex-wrap gap-1 mt-1">
+                {extractedEntities.tech_stack.map((tech, idx) => (
+                  <span key={idx} className="bg-white px-2 py-1 rounded text-xs border">
+                    {tech}
+                  </span>
+                ))}
+              </div>
+            </p>
+            <p><strong>Compliance:</strong> 
+              <div className="flex flex-wrap gap-1 mt-1">
+                {extractedEntities.compliance_requirements.map((comp, idx) => (
+                  <span key={idx} className="bg-white px-2 py-1 rounded text-xs border border-yellow-200">
+                    {comp}
+                  </span>
+                ))}
+              </div>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-purple-50 p-6 rounded-lg border border-purple-200 mb-6">
+        <h3 className="font-semibold text-lg mb-3 text-purple-800">🎯 Key Deliverables</h3>
+        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {extractedEntities.deliverables.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2">
+              <CheckCircle size={16} className="text-green-500 mt-1 flex-shrink-0" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <button
+        onClick={generateScope}
+        disabled={loading}
+        className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg font-medium disabled:opacity-50 flex items-center gap-3 text-lg w-full justify-center"
+      >
+        <TrendingUp size={24} />
+        Generate Comprehensive Scope with AI →
+      </button>
+    </div>
+  );
+
+  // Render scope overview section
+  const renderScopeOverview = () => (
+    <div className="bg-white rounded-lg shadow p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">📋 Project Overview</h2>
+        <button
+          onClick={() => setShowFullScope(!showFullScope)}
+          className="flex items-center gap-2 text-blue-500 hover:text-blue-600"
+        >
+          {showFullScope ? <EyeOff size={20} /> : <Eye size={20} />}
+          {showFullScope ? 'Hide Details' : 'Show Full Scope'}
+        </button>
+      </div>
+      
+      <p className="text-gray-700 mb-4">{scope.overview.project_summary}</p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <h3 className="font-semibold mb-2">🎯 Key Objectives</h3>
+          <ul className="space-y-2">
+            {scope.overview.key_objectives.map((obj, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <CheckCircle size={16} className="text-green-500 mt-1 flex-shrink-0" />
+                <span>{obj}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3 className="font-semibold mb-2">📊 Success Metrics</h3>
+          <ul className="space-y-2">
+            {scope.overview.success_metrics.map((metric, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <TrendingUp size={16} className="text-blue-500 mt-1 flex-shrink-0" />
+                <span>{metric}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render resource and cost summary (default preview)
+  const renderResourceSummary = () => (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <Users className="text-blue-500" />
+        Resource Plan & Costs
+      </h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div className="bg-blue-50 p-4 rounded-lg text-center">
+          <Users size={24} className="mx-auto text-blue-500 mb-2" />
+          <p className="text-2xl font-bold text-blue-600">{scope.resources.length}</p>
+          <p className="text-sm text-gray-600">Roles</p>
+        </div>
+        <div className="bg-green-50 p-4 rounded-lg text-center">
+          <Clock size={24} className="mx-auto text-green-500 mb-2" />
+          <p className="text-2xl font-bold text-green-600">{scope.timeline.total_duration_months}</p>
+          <p className="text-sm text-gray-600">Months</p>
+        </div>
+        <div className="bg-purple-50 p-4 rounded-lg text-center">
+          <DollarSign size={24} className="mx-auto text-purple-500 mb-2" />
+          <p className="text-2xl font-bold text-purple-600">
+            ${scope.cost_breakdown.total_cost.toLocaleString()}
+          </p>
+          <p className="text-sm text-gray-600">Total Cost</p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left">Role</th>
+              <th className="px-3 py-2 text-right">Count</th>
+              <th className="px-3 py-2 text-right">Months</th>
+              <th className="px-3 py-2 text-right">Total Cost</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {scope.resources.slice(0, 5).map((resource, idx) => (
+              <tr key={idx} className="hover:bg-gray-50">
+                <td className="px-3 py-2">{resource.role}</td>
+                <td className="px-3 py-2 text-right">{resource.count}</td>
+                <td className="px-3 py-2 text-right">{resource.effort_months}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  ${resource.total_cost.toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {scope.resources.length > 5 && (
+        <p className="text-sm text-gray-500 mt-2">
+          ... and {scope.resources.length - 5} more roles
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
-      {/* Progress Steps */}
-      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-        <div className="flex items-center justify-between">
-          {steps.map((step, index) => {
-            const StepIcon = step.icon;
-            return (
-              <React.Fragment key={step.id}>
-                <div className="flex flex-col items-center">
-                  <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
-                    currentStep >= step.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-400'
-                  } transition-all duration-300`}>
-                    <StepIcon size={24} />
-                  </div>
-                  <span className="mt-2 text-sm font-medium text-center max-w-[80px]">{step.name}</span>
-                </div>
-                {index < steps.length - 1 && (
-                  <div className={`flex-1 h-1 mx-4 ${
-                    currentStep > step.id ? 'bg-blue-500' : 'bg-gray-200'
-                  } transition-all duration-300`} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </div>
+      {renderProgressSteps()}
 
-      {/* Step 1: Upload Document */}
-      {currentStep === 1 && (
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <FileUp className="text-blue-500" />
-            Upload Project Document
-          </h2>
-          <p className="text-gray-600 mb-6">
-            Upload your RFP, SOW, or requirements document. Our AI will extract key entities automatically.
-          </p>
-          
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
-            <input
-              type="file"
-              onChange={handleFileUpload}
-              accept=".pdf,.docx,.doc,.txt"
-              className="hidden"
-              id="file-upload"
-            />
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <FileUp size={48} className="mx-auto text-gray-400 mb-4" />
-              <p className="text-lg font-medium mb-2">Click to upload or drag and drop</p>
-              <p className="text-sm text-gray-500">PDF, DOCX, or TXT (Max 10MB)</p>
-            </label>
-          </div>
-
-          {loading && (
-            <div className="mt-6 text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Extracting entities from document...</p>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Step 1: Document Upload */}
+      {currentStep === 1 && renderDocumentUpload()}
 
       {/* Step 2: Extracted Entities */}
-      {currentStep === 2 && extractedEntities && (
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-            <Bot className="text-green-500" />
-            Extracted Project Information
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-2">Project Details</h3>
-              <p><strong>Type:</strong> {extractedEntities.project_type}</p>
-              <p><strong>Domain:</strong> {extractedEntities.domain}</p>
-              <p><strong>Complexity:</strong> {extractedEntities.complexity}</p>
-              <p><strong>Duration:</strong> {extractedEntities.estimated_duration}</p>
-            </div>
-            
-            <div className="bg-green-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-2">Technology & Compliance</h3>
-              <p><strong>Tech Stack:</strong> {extractedEntities.tech_stack.join(', ')}</p>
-              <p><strong>Compliance:</strong> {extractedEntities.compliance_requirements.join(', ')}</p>
-            </div>
-          </div>
+      {currentStep === 2 && extractedEntities && renderExtractedEntities()}
 
-          <div className="bg-purple-50 p-4 rounded-lg mb-6">
-            <h3 className="font-semibold mb-2">Key Deliverables</h3>
-            <ul className="list-disc list-inside">
-              {extractedEntities.deliverables.map((item, idx) => (
-                <li key={idx}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <button
-            onClick={generateScope}
-            disabled={loading}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
-          >
-            <TrendingUp size={20} />
-            Generate Comprehensive Scope →
-          </button>
-        </div>
-      )}
-
-      {/* Step 3 & 4: Comprehensive Scope with Chat */}
+      {/* Steps 3-5: Scope Display with Refinement */}
       {currentStep >= 3 && scope && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Scope Display - 2 columns */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Confidence Badge */}
-            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg p-4 flex items-center justify-between">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Main Content - 3 columns */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Confidence Score */}
+            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg p-6 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold">AI Confidence Score</h3>
-                <p className="text-sm opacity-90">Based on {scope.metadata.rag_sources_count} similar projects</p>
+                <h3 className="text-xl font-semibold">AI Confidence Score</h3>
+                <p className="text-sm opacity-90">
+                  Based on {scope.metadata.rag_sources_count} similar projects • 
+                  {refinementCount > 0 && ` ${refinementCount} refinement${refinementCount > 1 ? 's' : ''} applied`}
+                </p>
               </div>
-              <div className="text-4xl font-bold">{(scope.metadata.confidence_score * 100).toFixed(0)}%</div>
+              <div className="text-5xl font-bold">
+                {(scope.metadata.confidence_score * 100).toFixed(0)}%
+              </div>
             </div>
 
-            {/* Overview */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">📋 Project Overview</h2>
-              <p className="text-gray-700 mb-4">{scope.overview.project_summary}</p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <h3 className="font-semibold mb-2">Key Objectives</h3>
-                  <ul className="space-y-1 text-sm">
-                    {scope.overview.key_objectives.map((obj, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <CheckCircle size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
-                        <span>{obj}</span>
-                      </li>
-                    ))}
-                  </ul>
+            {renderScopeOverview()}
+            {renderResourceSummary()}
+
+            {/* Full Scope Details (Collapsible) */}
+            {showFullScope && (
+              <div className="space-y-6">
+                {/* Architecture Diagrams */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h2 className="text-xl font-bold mb-4">🏗️ System Architecture</h2>
+                  <ArchitectureDiagram 
+                    diagram={scope.diagrams.architecture} 
+                    type="architecture"
+                  />
                 </div>
-                <div>
-                  <h3 className="font-semibold mb-2">Success Metrics</h3>
-                  <ul className="space-y-1 text-sm">
-                    {scope.overview.success_metrics.map((metric, idx) => (
-                      <li key={idx} className="flex items-start gap-2">
-                        <TrendingUp size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
-                        <span>{metric}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
 
-            {/* Architecture Diagram */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">🏗️ System Architecture</h2>
-              {renderMermaidDiagram(scope.diagrams.architecture.code)}
-            </div>
-
-            {/* Workflow Diagram */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">📊 Project Workflow</h2>
-              {renderMermaidDiagram(scope.diagrams.workflow.code)}
-            </div>
-
-            {/* Timeline */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">📅 Timeline & Milestones</h2>
-              <p className="text-2xl font-bold text-blue-600 mb-4">
-                {scope.timeline.total_duration_months} months
-              </p>
-              
-              <div className="space-y-4">
-                {scope.timeline.phases.map((phase, idx) => (
-                  <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
-                    <h3 className="font-semibold text-lg">{phase.phase_name}</h3>
-                    <p className="text-sm text-gray-600">
-                      {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
-                    </p>
-                    <div className="mt-2">
-                      <p className="text-sm font-medium">Milestones:</p>
-                      <ul className="text-sm list-disc list-inside">
-                        {phase.milestones.map((milestone, midx) => (
-                          <li key={midx}>{milestone}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Resources & Costs */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">👥 Resources & Costs</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Role</th>
-                      <th className="px-4 py-2 text-right">Count</th>
-                      <th className="px-4 py-2 text-right">Months</th>
-                      <th className="px-4 py-2 text-right">Rate</th>
-                      <th className="px-4 py-2 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {scope.resources.map((resource, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">{resource.role}</td>
-                        <td className="px-4 py-2 text-right">{resource.count}</td>
-                        <td className="px-4 py-2 text-right">{resource.effort_months}</td>
-                        <td className="px-4 py-2 text-right">${resource.monthly_rate.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right font-semibold">${resource.total_cost.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-blue-50 font-bold">
-                    <tr>
-                      <td colSpan="4" className="px-4 py-2 text-right">TOTAL:</td>
-                      <td className="px-4 py-2 text-right text-blue-600">
-                        ${scope.cost_breakdown.total_cost.toLocaleString()}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td colSpan="4" className="px-4 py-2 text-right text-sm">Contingency ({scope.cost_breakdown.contingency_percentage}%):</td>
-                      <td className="px-4 py-2 text-right text-sm">
-                        ${scope.cost_breakdown.contingency_amount.toLocaleString()}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            {/* Assumptions */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-              <h3 className="font-semibold mb-2 flex items-center gap-2">
-                <AlertTriangle size={20} className="text-yellow-600" />
-                Key Assumptions
-              </h3>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                {scope.assumptions.map((assumption, idx) => (
-                  <li key={idx}>{assumption}</li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Export Options */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <Download size={24} />
-                Export Options
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
-                  📄 PDF
-                </button>
-                <button className="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
-                  📊 Excel
-                </button>
-                <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
-                  🔧 JSON
-                </button>
-                <button className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
-                  📦 All (ZIP)
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Chat Refinement - 1 column */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow p-6 sticky top-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                <MessageCircle className="text-blue-500" />
-                Refine with AI
-              </h2>
-              
-              <div className="mb-4 h-96 overflow-y-auto border rounded p-4 space-y-4 bg-gray-50">
-                {chatHistory.length === 0 ? (
-                  <div className="text-center text-gray-500 py-8">
-                    <Bot size={48} className="mx-auto mb-4 text-gray-400" />
-                    <p className="mb-2 font-medium">Ask me to refine the scope!</p>
-                    <div className="text-xs space-y-1 mt-4 text-left">
-                      <p className="font-semibold">Example requests:</p>
-                      <p>• "Make the timeline 2 weeks shorter"</p>
-                      <p>• "Add security testing activities"</p>
-                      <p>• "Apply 10% discount"</p>
-                      <p>• "Remove manual testing tasks"</p>
-                      <p>• "Add 2 more frontend developers"</p>
-                    </div>
-                  </div>
-                ) : (
-                  chatHistory.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`${
-                        msg.role === 'user' ? 'bg-blue-50 ml-8' : 'bg-white mr-8 border'
-                      } p-3 rounded-lg`}
-                    >
-                      <p className="text-xs font-semibold mb-1 text-gray-600">
-                        {msg.role === 'user' ? '👤 You' : '🤖 AI Assistant'}
-                      </p>
-                      <p className="text-sm">{msg.message}</p>
-                      {msg.changes && (
-                        <div className="mt-2 text-xs bg-green-50 p-2 rounded">
-                          <strong>Changes:</strong>
-                          <ul className="list-disc list-inside mt-1">
-                            {msg.changes.map((change, cidx) => (
-                              <li key={cidx}>{change}</li>
+                {/* Timeline */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h2 className="text-xl font-bold mb-4">📅 Timeline & Milestones</h2>
+                  <p className="text-3xl font-bold text-blue-600 mb-6">
+                    {scope.timeline.total_duration_months} months
+                    <span className="text-lg text-gray-600 ml-2">
+                      ({scope.timeline.total_duration_weeks} weeks)
+                    </span>
+                  </p>
+                  
+                  <div className="space-y-4">
+                    {scope.timeline.phases.map((phase, idx) => (
+                      <div key={idx} className="border-l-4 border-blue-500 pl-4 py-3 bg-blue-50 rounded-r-lg">
+                        <h3 className="font-semibold text-lg">{phase.phase_name}</h3>
+                        <p className="text-sm text-gray-600">
+                          {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
+                        </p>
+                        <div className="mt-2">
+                          <p className="text-sm font-medium">Milestones:</p>
+                          <ul className="text-sm list-disc list-inside mt-1">
+                            {phase.milestones.map((milestone, midx) => (
+                              <li key={midx}>{milestone}</li>
                             ))}
                           </ul>
                         </div>
-                      )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Full Resource Table */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h2 className="text-xl font-bold mb-4">👥 Detailed Resource Plan</h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left">Role</th>
+                          <th className="px-4 py-3 text-right">Count</th>
+                          <th className="px-4 py-3 text-right">Months</th>
+                          <th className="px-4 py-3 text-right">Allocation</th>
+                          <th className="px-4 py-3 text-right">Monthly Rate</th>
+                          <th className="px-4 py-3 text-right">Total Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {scope.resources.map((resource, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium">{resource.role}</td>
+                            <td className="px-4 py-3 text-right">{resource.count}</td>
+                            <td className="px-4 py-3 text-right">{resource.effort_months}</td>
+                            <td className="px-4 py-3 text-right">{resource.allocation_percentage}%</td>
+                            <td className="px-4 py-3 text-right">${resource.monthly_rate.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-right font-semibold">
+                              ${resource.total_cost.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Cost Breakdown */}
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h2 className="text-xl font-bold mb-4">💰 Cost Breakdown</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-semibold mb-3">Cost Summary</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span>Subtotal:</span>
+                          <span>${scope.cost_breakdown.subtotal?.toLocaleString() || scope.cost_breakdown.total_cost.toLocaleString()}</span>
+                        </div>
+                        {scope.cost_breakdown.discount_applied > 0 && (
+                          <div className="flex justify-between text-red-600">
+                            <span>Discount ({scope.cost_breakdown.discount_applied}%):</span>
+                            <span>-${(scope.cost_breakdown.subtotal - scope.cost_breakdown.total_cost).toLocaleString()}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between">
+                          <span>Contingency ({scope.cost_breakdown.contingency_percentage}%):</span>
+                          <span>${scope.cost_breakdown.contingency_amount.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2 font-bold text-lg">
+                          <span>Total Cost:</span>
+                          <span className="text-blue-600">
+                            ${scope.cost_breakdown.total_cost.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  ))
-                )}
-              </div>
+                  </div>
+                </div>
 
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={chatMessage}
-                  onChange={(e) => setChatMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleRefinement()}
-                  placeholder="Type your refinement request..."
-                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-                  disabled={loading}
+                {/* Assumptions */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <AlertTriangle size={20} className="text-yellow-600" />
+                    Key Assumptions & Dependencies
+                  </h3>
+                  <ul className="list-disc list-inside space-y-2">
+                    {scope.assumptions.map((assumption, idx) => (
+                      <li key={idx}>{assumption}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Export Section */}
+            {currentStep >= 4 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <ExportButtons 
+                  scope={scope} 
+                  projectId={projectId}
+                  onFinalize={finalizeScope}
                 />
-                <button
-                  onClick={handleRefinement}
-                  disabled={loading || !chatMessage.trim()}
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-medium disabled:opacity-50"
-                >
-                  Send
-                </button>
               </div>
+            )}
+          </div>
 
-              <button
-                onClick={() => setCurrentStep(5)}
-                className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2"
-              >
-                <CheckCircle size={20} />
-                Finalize Scope
-              </button>
-            </div>
+          {/* Refinement Sidebar - 1 column */}
+          <div className="lg:col-span-1">
+            <RefinementBar 
+              onRefine={handleRefinement}
+              loading={loading}
+              refinements={refinements}
+              currentStep={currentStep}
+              onStepChange={setCurrentStep}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
+            <RefreshCw className="animate-spin h-12 w-12 text-blue-500 mx-auto mb-4" />
+            <p className="text-lg font-medium">Processing...</p>
+            <p className="text-sm text-gray-600">This may take a few moments</p>
           </div>
         </div>
       )}

@@ -4,7 +4,7 @@ import json
 import re
 from typing import Dict, Any, List, Optional
 from app.config.config import settings
-from .rag_engine import rag_engine
+from app.utils.rag_engine import rag_engine
 
 # Configure Gemini
 genai.configure(api_key=settings.GEMINI_API_KEY)
@@ -50,14 +50,14 @@ class EnhancedAIEngine:
     
     async def generate_scope_with_rag(self, 
                                     project_data: Dict[str, Any], 
-                                    answered_questions: List[Dict[str, Any]],
-                                    similar_projects: List[Dict[str, Any]]) -> Dict[str, Any]:
+                                    answered_questions: List[Dict[str, Any]] = None,
+                                    similar_projects: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate scope using RAG-enhanced context - FIXED VERSION"""
         try:
             print(f"🎯 Generating scope for: {project_data.get('name')}")
             
             # Build comprehensive context
-            context = self._build_scope_context(project_data, answered_questions, similar_projects)
+            context = self._build_scope_context(project_data, answered_questions or [], similar_projects or [])
             
             prompt = f"""
 You are an expert project manager. Generate a COMPREHENSIVE project scope.
@@ -77,6 +77,7 @@ Generate this exact structure:
   }},
   "timeline": {{
     "total_duration_months": 6,
+    "total_duration_weeks": 24,
     "phases": [
       {{
         "phase_name": "Phase 1: Planning & Design",
@@ -256,8 +257,10 @@ Generate this exact structure:
   }},
   "cost_breakdown": {{
     "total_cost": 256000,
+    "subtotal": 256000,
     "contingency_percentage": 15,
-    "contingency_amount": 38400
+    "contingency_amount": 38400,
+    "discount_applied": 0
   }},
   "risks": [
     {{
@@ -286,6 +289,18 @@ Generate this exact structure:
       "mitigation": "Maintain backup resource pool and cross-training",
       "category": "Resource Management",
       "owner": "Project Manager"
+    }}
+  ],
+  "assumptions": [
+    "Client will provide timely feedback and approvals",
+    "All required resources will be available as planned",
+    "Requirements are stable and major changes will follow change management process"
+  ],
+  "dependencies": [
+    {{
+      "activity": "UI/UX Design",
+      "depends_on": ["Requirements Analysis"],
+      "phase": "Planning & Design"
     }}
   ]
 }}
@@ -334,15 +349,17 @@ Return ONLY this JSON object. NO other text.
         context = "INSIGHTS FROM SIMILAR HISTORICAL PROJECTS:\n\n"
         
         for i, project in enumerate(similar_projects["similar_projects"][:3], 1):
-            context += f"Project {i}: {project['project_name']}\n"
-            context += f"Domain: {project['domain']} | Complexity: {project['complexity']}\n"
-            context += f"Cost: ${project['total_cost']:,} | Duration: {project['duration']} months\n"
-            context += f"Similarity: {project['similarity_score']:.2f}\n"
+            context += f"Project {i}: {project.get('project_name', 'Unknown')}\n"
+            context += f"Domain: {project.get('domain', 'Unknown')} | Complexity: {project.get('complexity', 'Unknown')}\n"
+            context += f"Cost: ${project.get('total_cost', 0):,} | Duration: {project.get('duration_months', project.get('duration', 0))} months\n"
+            context += f"Similarity: {project.get('similarity_score', 0):.2f}\n"
             
             if project.get('key_insights'):
                 context += "Key Insights:\n"
                 for insight in project['key_insights']:
                     context += f"  • {insight}\n"
+            elif project.get('lessons_learned'):
+                context += f"Lessons: {project['lessons_learned']}\n"
             
             context += "\n"
         
@@ -360,6 +377,8 @@ PROJECT DETAILS:
 - Complexity: {project_data.get('complexity')}
 - Tech Stack: {project_data.get('tech_stack')}
 - Use Cases: {project_data.get('use_cases')}
+- Compliance: {project_data.get('compliance')}
+- Duration: {project_data.get('duration')}
 """
         
         if answered_questions:
@@ -370,9 +389,14 @@ PROJECT DETAILS:
         if similar_projects:
             context += "\nHISTORICAL PROJECT INSIGHTS:\n"
             for project in similar_projects[:2]:
-                context += f"• Similar project '{project['project_name']}': {project['duration']} months, ${project['total_cost']:,}\n"
-                for insight in project.get('key_insights', [])[:2]:
-                    context += f"  - {insight}\n"
+                context += f"• Similar project '{project.get('project_name', 'Unknown')}': "
+                context += f"{project.get('duration_months', project.get('duration', 0))} months, "
+                context += f"${project.get('total_cost', 0):,}\n"
+                
+                insights = project.get('key_insights', []) or [project.get('lessons_learned', '')]
+                for insight in insights[:2]:
+                    if insight:
+                        context += f"  - {insight}\n"
         
         return context
     
@@ -529,12 +553,12 @@ Return ONLY this JSON array. NO other text.
         # Add RAG insights section
         scope['rag_insights'] = {
             "similar_projects_count": len(similar_projects),
-            "most_similar_project": most_similar['project_name'],
-            "similarity_score": most_similar['similarity_score'],
+            "most_similar_project": most_similar.get('project_name', 'Unknown'),
+            "similarity_score": most_similar.get('similarity_score', 0),
             "historical_reference": True,
             "insights_applied": [
-                f"Timeline adjusted based on {most_similar['project_name']}",
-                f"Resource allocation informed by similar {most_similar['domain']} projects",
+                f"Timeline adjusted based on {most_similar.get('project_name', 'historical')} project",
+                f"Resource allocation informed by similar {most_similar.get('domain', '')} projects",
                 "Cost estimates validated against historical data"
             ]
         }
@@ -587,6 +611,7 @@ Return ONLY this JSON array. NO other text.
             },
             "timeline": {
                 "total_duration_months": 6,
+                "total_duration_weeks": 24,
                 "phases": [
                     {
                         "phase_name": "Planning",
@@ -623,8 +648,10 @@ Return ONLY this JSON array. NO other text.
             },
             "cost_breakdown": {
                 "total_cost": 60000,
+                "subtotal": 60000,
                 "contingency_percentage": 15,
-                "contingency_amount": 9000
+                "contingency_amount": 9000,
+                "discount_applied": 0
             },
             "risks": [
                 {
@@ -636,7 +663,12 @@ Return ONLY this JSON array. NO other text.
                     "category": "Requirements",
                     "owner": "Project Manager"
                 }
-            ]
+            ],
+            "assumptions": [
+                "Client will provide timely feedback",
+                "Resources will be available as needed"
+            ],
+            "dependencies": []
         }
     
     async def _fallback_analysis(self, project_data: Dict[str, Any]) -> Dict[str, Any]:

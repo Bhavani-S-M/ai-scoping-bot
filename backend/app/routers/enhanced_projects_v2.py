@@ -6,9 +6,10 @@ from sqlalchemy import select
 from typing import List, Optional
 import uuid
 import os
+from datetime import datetime
 
 from app.config.database import get_async_session
-from app.schemas.project_schemas import Project, ProjectCreate
+from app.schemas.project_schemas import Project, ProjectCreate, RefinementRequest, FinalizeRequest
 from app.models.project_models import Project as ProjectModel, ProjectFile
 from app.utils.document_parser import document_parser
 from app.utils.architecture_generator import architecture_generator
@@ -19,26 +20,67 @@ from app.utils.chroma_db import store_document
 from app.auth.router import current_active_user
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/projects", tags=["enhanced_projects"])
-
+router = APIRouter(prefix="/projects", tags=["projects"])
 
 class DocumentUploadRequest(BaseModel):
     extract_entities: bool = True
 
+# ============================================================================
+# 1. CREATE PROJECT (Basic endpoint that's missing)
+# ============================================================================
 
-class RefinementRequest(BaseModel):
-    message: str
-    current_scope: dict
-
-
-class FinalizeRequest(BaseModel):
-    scope_data: dict
-    user_feedback: Optional[str] = None
-    approval_status: str = "approved"
-
+@router.post("/", response_model=Project)
+async def create_project(
+    project: ProjectCreate,
+    db: AsyncSession = Depends(get_async_session),
+    user = Depends(current_active_user)
+):
+    """Create a new project"""
+    try:
+        db_project = ProjectModel(
+            name=project.name,
+            domain=project.domain,
+            complexity=project.complexity,
+            tech_stack=project.tech_stack,
+            use_cases=project.use_cases,
+            compliance=project.compliance,
+            duration=project.duration,
+            owner_id=user.id,
+            company_id=project.company_id
+        )
+        
+        db.add(db_project)
+        await db.commit()
+        await db.refresh(db_project)
+        
+        return db_project
+        
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
 
 # ============================================================================
-# 1. CREATE PROJECT WITH DOCUMENT UPLOAD
+# 2. GET USER PROJECTS (Basic endpoint that's missing)
+# ============================================================================
+
+@router.get("/", response_model=List[Project])
+async def get_user_projects(
+    db: AsyncSession = Depends(get_async_session),
+    user = Depends(current_active_user)
+):
+    """Get all projects for the current user"""
+    try:
+        result = await db.execute(
+            select(ProjectModel).where(ProjectModel.owner_id == user.id)
+        )
+        projects = result.scalars().all()
+        return projects
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch projects: {str(e)}")
+
+# ============================================================================
+# 3. UPLOAD AND PARSE DOCUMENT
 # ============================================================================
 
 @router.post("/{project_id}/upload-document")
@@ -120,9 +162,8 @@ async def upload_and_parse_document(
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
-# 2. GENERATE COMPREHENSIVE SCOPE WITH ARCHITECTURE
+# 4. GENERATE COMPREHENSIVE SCOPE WITH ARCHITECTURE
 # ============================================================================
 
 @router.post("/{project_id}/generate-comprehensive-scope")
@@ -221,9 +262,8 @@ async def generate_comprehensive_scope(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
-# 3. INTERACTIVE REFINEMENT
+# 5. INTERACTIVE REFINEMENT
 # ============================================================================
 
 @router.post("/{project_id}/refine")
@@ -258,9 +298,8 @@ async def refine_scope(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
-# 4. FINALIZE AND LEARN
+# 6. FINALIZE AND LEARN
 # ============================================================================
 
 @router.post("/{project_id}/finalize")
@@ -316,12 +355,9 @@ async def finalize_scope(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-from datetime import datetime
 
 def calculate_confidence_score(similar_projects: list, rag_used: bool) -> float:
     """Calculate confidence score based on RAG matches"""
@@ -335,7 +371,6 @@ def calculate_confidence_score(similar_projects: list, rag_used: bool) -> float:
     confidence = 0.6 + (0.4 * avg_similarity)
     
     return round(confidence, 2)
-
 
 def generate_assumptions(project_data: dict, scope: dict) -> list:
     """Generate key assumptions for the project"""
@@ -355,7 +390,6 @@ def generate_assumptions(project_data: dict, scope: dict) -> list:
         assumptions.append("PCI-DSS and financial compliance standards are defined")
     
     return assumptions
-
 
 def extract_dependencies(activities: list) -> list:
     """Extract and organize project dependencies"""

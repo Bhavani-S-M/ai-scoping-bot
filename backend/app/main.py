@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from app.config.database import engine, Base
 from app.models import user_models, project_models
-from app.routers.enhanced_projects import router as projects_router
+from app.routers.enhanced_projects_v2 import router as enhanced_projects_router
 from app.routers.exports import router as exports_router
 from app.routers.blob import router as blob_router
 from app.routers.ratecards import router as ratecards_router
@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI-Powered Project Scoping Bot",
-    description="Intelligent project scoping assistant with RAG",
-    version="2.0.0",
+    description="Intelligent project scoping assistant with RAG and Real-time Refinement",
+    version="3.0.0",
     lifespan=lifespan
 )
 
@@ -43,18 +43,18 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth_router, prefix="/api")
-app.include_router(projects_router)
-app.include_router(exports_router)
-app.include_router(blob_router)
-app.include_router(ratecards_router)
-app.include_router(project_prompts_router)
+app.include_router(enhanced_projects_router, prefix="/api")
+app.include_router(exports_router, prefix="/api")
+app.include_router(blob_router, prefix="/api")
+app.include_router(ratecards_router, prefix="/api")
+app.include_router(project_prompts_router, prefix="/api")
 
 
 @app.get("/")
 async def root():
-    return {"message": "AI Scoping Bot API", "version": "2.0.0"}
+    return {"message": "AI Scoping Bot API", "version": "3.0.0"}
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "2.0.0"}
+    return {"status": "healthy", "version": "3.0.0"}

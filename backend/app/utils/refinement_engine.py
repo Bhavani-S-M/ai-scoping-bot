@@ -2,91 +2,121 @@
 import google.generativeai as genai
 import json
 import re
-from typing import Dict, Any, List
+import math
+from typing import Dict, Any, List, Tuple
 from app.config.config import settings
+from app.schemas.project_schemas import RefinementIntent
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 class RefinementEngine:
-    """Interactive scope refinement with intent detection and automatic recalculation"""
+    """Enhanced interactive scope refinement with advanced NLP intent detection"""
     
     def __init__(self):
         self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
         
-        # Intent patterns
+        # Enhanced intent patterns with weights
         self.intent_patterns = {
-            'modify_tasks': ['add', 'remove', 'include', 'exclude', 'add task', 'remove activity'],
-            'adjust_timeline': ['shorter', 'longer', 'reduce time', 'extend', 'faster', 'quicker', 'weeks', 'months'],
-            'apply_discount': ['discount', 'reduce cost', 'reduce price', '% off', 'percent off'],
-            'modify_resources': ['add developer', 'remove', 'more team', 'less team', 'increase headcount']
+            'modify_tasks': {
+                'patterns': ['add task', 'remove activity', 'include', 'exclude', 'new feature', 'additional work'],
+                'weight': 0.9
+            },
+            'adjust_timeline': {
+                'patterns': ['shorter', 'longer', 'reduce time', 'extend', 'faster', 'quicker', 'weeks', 'months', 'duration'],
+                'weight': 0.8
+            },
+            'apply_discount': {
+                'patterns': ['discount', 'reduce cost', 'reduce price', '% off', 'percent off', 'cheaper', 'lower price'],
+                'weight': 0.7
+            },
+            'modify_resources': {
+                'patterns': ['add developer', 'remove resource', 'more team', 'less team', 'increase headcount', 'reduce team'],
+                'weight': 0.8
+            }
         }
     
     async def process_refinement_request(self, user_message: str, current_scope: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process refinement request and update scope
-        
-        Args:
-            user_message: User's refinement request
-            current_scope: Current scope data
-            
-        Returns:
-            Dict with updated_scope, response, changes_made, intent
+        Enhanced refinement processing with better NLP and constraint validation
         """
         try:
-            # Detect intent
-            intent = self._detect_intent(user_message)
+            # Detect intent with confidence scoring
+            intent, confidence = self._detect_intent_with_confidence(user_message)
             
             # Process based on intent
-            if intent == 'modify_tasks':
+            if intent == RefinementIntent.MODIFY_TASKS and confidence > 0.6:
                 return await self._modify_tasks(user_message, current_scope)
-            elif intent == 'adjust_timeline':
+            elif intent == RefinementIntent.ADJUST_TIMELINE and confidence > 0.6:
                 return await self._adjust_timeline(user_message, current_scope)
-            elif intent == 'apply_discount':
+            elif intent == RefinementIntent.APPLY_DISCOUNT and confidence > 0.7:
                 return await self._apply_discount(user_message, current_scope)
-            elif intent == 'modify_resources':
+            elif intent == RefinementIntent.MODIFY_RESOURCES and confidence > 0.6:
                 return await self._modify_resources(user_message, current_scope)
             else:
-                return await self._generic_refinement(user_message, current_scope)
+                return await self._generic_refinement(user_message, current_scope, intent)
                 
         except Exception as e:
             print(f"❌ Refinement error: {e}")
             return {
                 'updated_scope': current_scope,
                 'response': f"I encountered an error: {str(e)}. Please try rephrasing your request.",
-                'changes_made': [],
-                'intent': 'error'
+                'changes_made': ['Error occurred - no changes applied'],
+                'intent': RefinementIntent.ERROR
             }
     
-    def _detect_intent(self, message: str) -> str:
-        """Detect user intent from message"""
+    def _detect_intent_with_confidence(self, message: str) -> Tuple[RefinementIntent, float]:
+        """Enhanced intent detection with confidence scoring"""
         message_lower = message.lower()
+        scores = {}
         
-        for intent, patterns in self.intent_patterns.items():
-            if any(pattern in message_lower for pattern in patterns):
-                return intent
+        for intent, data in self.intent_patterns.items():
+            score = 0
+            for pattern in data['patterns']:
+                if pattern in message_lower:
+                    score += data['weight']
+            
+            # Boost score for exact matches
+            if any(f" {pattern} " in f" {message_lower} " for pattern in data['patterns']):
+                score += 0.2
+                
+            scores[intent] = score
         
-        return 'generic'
+        # Get best intent
+        if scores:
+            best_intent = max(scores, key=scores.get)
+            confidence = min(1.0, scores[best_intent])
+            return RefinementIntent(best_intent), confidence
+        
+        return RefinementIntent.GENERIC, 0.5
     
     async def _modify_tasks(self, message: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Add or remove tasks/activities"""
+        """Enhanced task modification with phase awareness"""
         
         prompt = f"""
-Analyze this request to modify project activities:
+Analyze this task modification request and provide structured instructions:
+
 User Request: "{message}"
 
-Current Activities: {json.dumps(scope.get('activities', [])[:5], indent=2)}
+Current Activities (first 10): 
+{json.dumps([{'name': a.get('name'), 'phase': a.get('phase'), 'effort_days': a.get('effort_days')} 
+              for a in scope.get('activities', [])[:10]], indent=2)}
 
 Determine:
-1. Should we ADD or REMOVE activities?
-2. What specific activities should be affected?
-3. What phase should they be in?
+1. Action: "add" or "remove" or "modify"
+2. Activity details (name, description if adding)
+3. Target phase
+4. Estimated effort in days
+5. Dependencies (if any)
 
-Return ONLY JSON:
+Return ONLY valid JSON:
 {{
-  "action": "add" or "remove",
-  "activity_type": "description of activity",
-  "phase": "phase name",
-  "effort_days": estimated days (if adding)
+  "action": "add|remove|modify",
+  "activity_name": "specific activity name",
+  "activity_description": "detailed description if adding",
+  "target_phase": "Planning|Design|Development|Testing|Deployment",
+  "effort_days": number,
+  "dependencies": ["list of prerequisite activities"],
+  "resources_required": ["list of required roles"]
 }}
 """
         
@@ -96,83 +126,108 @@ Return ONLY JSON:
             
             updated_scope = scope.copy()
             activities = updated_scope.get('activities', [])
+            changes = []
             
             if instruction['action'] == 'add':
-                # Add new activity
+                # Add new activity with validation
                 new_activity = {
-                    'name': instruction['activity_type'],
-                    'phase': instruction.get('phase', 'Development'),
-                    'effort_days': instruction.get('effort_days', 5),
-                    'dependencies': [],
-                    'resources_needed': ['Developer']
+                    'name': instruction['activity_name'],
+                    'description': instruction.get('activity_description', instruction['activity_name']),
+                    'phase': instruction.get('target_phase', 'Development'),
+                    'effort_days': max(1, instruction.get('effort_days', 5)),
+                    'dependencies': instruction.get('dependencies', []),
+                    'resources_needed': instruction.get('resources_required', ['Developer'])
                 }
                 activities.append(new_activity)
-                changes = [f"Added: {new_activity['name']} ({new_activity['effort_days']} days)"]
+                changes = [f"Added: {new_activity['name']} ({new_activity['effort_days']} days in {new_activity['phase']})"]
                 
-            else:  # remove
+            elif instruction['action'] == 'remove':
                 # Remove matching activities
                 original_count = len(activities)
                 activities = [
                     a for a in activities 
-                    if instruction['activity_type'].lower() not in a['name'].lower()
+                    if instruction['activity_name'].lower() not in a['name'].lower()
                 ]
                 removed_count = original_count - len(activities)
-                changes = [f"Removed {removed_count} activity(ies) matching '{instruction['activity_type']}'"]
+                if removed_count > 0:
+                    changes = [f"Removed {removed_count} activity(ies) matching '{instruction['activity_name']}'"]
+                else:
+                    changes = [f"No activities found matching '{instruction['activity_name']}'"]
+            
+            else:  # modify
+                # Modify existing activities
+                modified_count = 0
+                for activity in activities:
+                    if instruction['activity_name'].lower() in activity['name'].lower():
+                        activity.update({
+                            'description': instruction.get('activity_description', activity.get('description')),
+                            'phase': instruction.get('target_phase', activity.get('phase')),
+                            'effort_days': instruction.get('effort_days', activity.get('effort_days'))
+                        })
+                        modified_count += 1
+                
+                changes = [f"Modified {modified_count} activity(ies)"]
             
             updated_scope['activities'] = activities
             
-            # Recalculate timeline
+            # Recalculate timeline and resources
             updated_scope = self._recalculate_timeline(updated_scope)
+            updated_scope = self._recalculate_resources(updated_scope)
             
             return {
                 'updated_scope': updated_scope,
-                'response': f"I've {instruction['action']}ed activities as requested. {changes[0]}",
+                'response': f"I've updated the activities. {changes[0]}",
                 'changes_made': changes,
-                'intent': 'modify_tasks'
+                'intent': RefinementIntent.MODIFY_TASKS
             }
             
         except Exception as e:
             print(f"Error in _modify_tasks: {e}")
             return {
                 'updated_scope': scope,
-                'response': "I couldn't modify the tasks. Please be more specific.",
+                'response': "I couldn't modify the tasks. Please be more specific about what to add, remove, or change.",
                 'changes_made': [],
-                'intent': 'modify_tasks'
+                'intent': RefinementIntent.MODIFY_TASKS
             }
     
     async def _adjust_timeline(self, message: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Adjust project timeline"""
+        """Enhanced timeline adjustment with phase-level granularity"""
         
-        # Extract time adjustment
         message_lower = message.lower()
         
-        if 'shorter' in message_lower or 'faster' in message_lower or 'quicker' in message_lower:
+        # Extract specific duration changes
+        weeks_match = re.search(r'(\d+)\s*weeks?', message_lower)
+        months_match = re.search(r'(\d+)\s*months?', message_lower)
+        
+        if weeks_match:
+            target_weeks = int(weeks_match.group(1))
+            current_weeks = sum(p.get('duration_weeks', 0) for p in scope.get('timeline', {}).get('phases', []))
+            adjustment_factor = target_weeks / current_weeks if current_weeks > 0 else 1.0
+            direction = f"adjusted to {target_weeks} weeks"
+        elif months_match:
+            target_months = int(months_match.group(1))
+            current_months = scope.get('timeline', {}).get('total_duration_months', 6)
+            adjustment_factor = target_months / current_months if current_months > 0 else 1.0
+            direction = f"adjusted to {target_months} months"
+        elif any(word in message_lower for word in ['shorter', 'faster', 'quicker', 'reduce']):
             adjustment_factor = 0.85  # 15% shorter
-            direction = "shorter"
-        elif 'longer' in message_lower or 'extend' in message_lower:
+            direction = "shortened by 15%"
+        elif any(word in message_lower for word in ['longer', 'extend', 'increase']):
             adjustment_factor = 1.15  # 15% longer
-            direction = "longer"
+            direction = "extended by 15%"
         else:
-            # Try to extract specific duration
-            weeks_match = re.search(r'(\d+)\s*weeks?', message_lower)
-            if weeks_match:
-                target_weeks = int(weeks_match.group(1))
-                current_weeks = sum(p.get('duration_weeks', 0) for p in scope.get('timeline', {}).get('phases', []))
-                adjustment_factor = target_weeks / current_weeks if current_weeks > 0 else 1.0
-                direction = "adjusted"
-            else:
-                adjustment_factor = 1.0
-                direction = "unchanged"
+            adjustment_factor = 1.0
+            direction = "unchanged"
         
         updated_scope = scope.copy()
         timeline = updated_scope.get('timeline', {})
         phases = timeline.get('phases', [])
         
-        # Adjust phase durations
+        # Adjust phase durations with minimum constraints
         current_week = 1
         for phase in phases:
             original_duration = phase.get('duration_weeks', 4)
-            new_duration = max(1, int(original_duration * adjustment_factor))
+            new_duration = max(2, int(original_duration * adjustment_factor))  # Minimum 2 weeks per phase
             phase['duration_weeks'] = new_duration
             phase['start_week'] = current_week
             phase['end_week'] = current_week + new_duration - 1
@@ -181,6 +236,7 @@ Return ONLY JSON:
         # Update total duration
         total_weeks = sum(p['duration_weeks'] for p in phases)
         timeline['total_duration_months'] = round(total_weeks / 4.33, 1)
+        timeline['total_duration_weeks'] = total_weeks
         
         updated_scope['timeline'] = timeline
         
@@ -188,79 +244,119 @@ Return ONLY JSON:
         updated_scope = self._recalculate_resources(updated_scope)
         
         changes = [
-            f"Timeline made {direction}",
-            f"Total duration: {timeline['total_duration_months']} months",
-            f"Total weeks: {total_weeks}"
+            f"Timeline {direction}",
+            f"Total duration: {timeline['total_duration_months']} months ({total_weeks} weeks)",
+            f"Phase durations adjusted proportionally"
         ]
         
         return {
             'updated_scope': updated_scope,
-            'response': f"I've made the timeline {direction}. New duration: {timeline['total_duration_months']} months.",
+            'response': f"I've adjusted the timeline. New duration: {timeline['total_duration_months']} months.",
             'changes_made': changes,
-            'intent': 'adjust_timeline'
+            'intent': RefinementIntent.ADJUST_TIMELINE
         }
     
     async def _apply_discount(self, message: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply discount to project cost"""
+        """Enhanced discount application with detailed breakdown"""
         
-        # Extract discount percentage
-        discount_match = re.search(r'(\d+)\s*%', message)
-        if discount_match:
-            discount_percent = int(discount_match.group(1))
-        else:
-            discount_percent = 10  # Default 10%
+        # Extract discount percentage with better pattern matching
+        discount_match = re.search(r'(\d+(?:\.\d+)?)\s*%', message)
+        flat_match = re.search(r'\$(\d+(?:,\d+)*(?:\.\d+)?)', message)  # $ amount reduction
         
         updated_scope = scope.copy()
         resources = updated_scope.get('resources', [])
-        
-        discount_factor = 1 - (discount_percent / 100)
-        
-        # Apply discount to all resources
-        for resource in resources:
-            original_cost = resource.get('total_cost', 0)
-            resource['total_cost'] = round(original_cost * discount_factor, 2)
-        
-        updated_scope['resources'] = resources
-        
-        # Recalculate cost breakdown
-        total_cost = sum(r.get('total_cost', 0) for r in resources)
         cost_breakdown = updated_scope.get('cost_breakdown', {})
+        
+        original_total = cost_breakdown.get('total_cost', 0)
+        changes = []
+        
+        if discount_match:
+            discount_percent = float(discount_match.group(1))
+            discount_factor = 1 - (discount_percent / 100)
+            
+            # Apply discount to all resources
+            for resource in resources:
+                original_cost = resource.get('total_cost', 0)
+                resource['total_cost'] = round(original_cost * discount_factor, 2)
+            
+            changes.append(f"Applied {discount_percent}% discount")
+            
+        elif flat_match:
+            discount_amount = float(flat_match.group(1).replace(',', ''))
+            if discount_amount < original_total:
+                discount_factor = 1 - (discount_amount / original_total)
+                discount_percent = (1 - discount_factor) * 100
+                
+                for resource in resources:
+                    original_cost = resource.get('total_cost', 0)
+                    resource['total_cost'] = round(original_cost * discount_factor, 2)
+                
+                changes.append(f"Applied ${discount_amount:,.2f} discount ({discount_percent:.1f}%)")
+            else:
+                return {
+                    'updated_scope': scope,
+                    'response': f"Cannot apply ${discount_amount:,.2f} discount - it exceeds total cost of ${original_total:,.2f}",
+                    'changes_made': ['Discount rejected - exceeds total cost'],
+                    'intent': RefinementIntent.APPLY_DISCOUNT
+                }
+        else:
+            # Default 10% discount
+            discount_percent = 10
+            discount_factor = 0.9
+            
+            for resource in resources:
+                original_cost = resource.get('total_cost', 0)
+                resource['total_cost'] = round(original_cost * discount_factor, 2)
+            
+            changes.append(f"Applied default {discount_percent}% discount")
+        
+        # Recalculate totals
+        total_cost = sum(r.get('total_cost', 0) for r in resources)
         cost_breakdown['total_cost'] = total_cost
-        cost_breakdown['discount_applied'] = discount_percent
+        cost_breakdown['discount_applied'] = discount_percent if 'discount_percent' in locals() else 0
+        cost_breakdown['subtotal'] = original_total
         cost_breakdown['contingency_amount'] = round(
             total_cost * (cost_breakdown.get('contingency_percentage', 15) / 100),
             2
         )
         
+        updated_scope['resources'] = resources
         updated_scope['cost_breakdown'] = cost_breakdown
         
-        changes = [
-            f"Applied {discount_percent}% discount",
+        savings = original_total - total_cost
+        changes.extend([
             f"New total cost: ${total_cost:,.2f}",
-            f"Savings: ${sum(r.get('total_cost', 0) for r in scope.get('resources', [])) - total_cost:,.2f}"
-        ]
+            f"Savings: ${savings:,.2f}"
+        ])
         
         return {
             'updated_scope': updated_scope,
-            'response': f"I've applied a {discount_percent}% discount. New total: ${total_cost:,.2f}",
+            'response': f"I've applied the discount. New total: ${total_cost:,.2f} (saved ${savings:,.2f})",
             'changes_made': changes,
-            'intent': 'apply_discount'
+            'intent': RefinementIntent.APPLY_DISCOUNT
         }
     
     async def _modify_resources(self, message: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Add or remove resources"""
+        """Enhanced resource modification with role detection"""
         
         message_lower = message.lower()
         
-        # Detect role and action
+        # Enhanced role detection
         role_keywords = {
             'frontend': 'Frontend Developer',
-            'backend': 'Backend Developer',
+            'backend': 'Backend Developer', 
+            'fullstack': 'Full Stack Developer',
             'designer': 'UI/UX Designer',
             'qa': 'QA Engineer',
+            'tester': 'QA Engineer',
             'devops': 'DevOps Engineer',
             'pm': 'Project Manager',
-            'analyst': 'Business Analyst'
+            'manager': 'Project Manager',
+            'analyst': 'Business Analyst',
+            'architect': 'Solution Architect',
+            'data': 'Data Engineer',
+            'ml': 'ML Engineer',
+            'security': 'Security Engineer'
         }
         
         detected_role = None
@@ -272,17 +368,21 @@ Return ONLY JSON:
         if not detected_role:
             detected_role = 'Developer'  # Default
         
-        # Detect count
+        # Detect count and action
         count_match = re.search(r'(\d+)', message)
         count_change = int(count_match.group(1)) if count_match else 1
         
-        # Detect add or remove
-        is_adding = any(word in message_lower for word in ['add', 'more', 'increase'])
+        is_adding = any(word in message_lower for word in ['add', 'more', 'increase', 'additional'])
+        is_removing = any(word in message_lower for word in ['remove', 'less', 'reduce', 'fewer'])
+        
+        # Default to adding if no clear action
+        if not is_adding and not is_removing:
+            is_adding = True
         
         updated_scope = scope.copy()
         resources = updated_scope.get('resources', [])
         
-        # Find existing resource
+        # Find existing resource or create new
         existing_resource = next((r for r in resources if r['role'] == detected_role), None)
         
         changes = []
@@ -290,30 +390,32 @@ Return ONLY JSON:
         if existing_resource:
             if is_adding:
                 existing_resource['count'] += count_change
-                existing_resource['total_cost'] = (
-                    existing_resource['count'] * 
-                    existing_resource['effort_months'] * 
-                    existing_resource['monthly_rate']
-                )
                 changes.append(f"Added {count_change} {detected_role}(s)")
-            else:
+            elif is_removing:
                 existing_resource['count'] = max(0, existing_resource['count'] - count_change)
+                if existing_resource['count'] == 0:
+                    resources = [r for r in resources if r['role'] != detected_role]
+                    changes.append(f"Removed all {detected_role} positions")
+                else:
+                    changes.append(f"Removed {count_change} {detected_role}(s)")
+            
+            # Recalculate cost for existing resource
+            if existing_resource in resources:
                 existing_resource['total_cost'] = (
                     existing_resource['count'] * 
                     existing_resource['effort_months'] * 
                     existing_resource['monthly_rate']
                 )
-                changes.append(f"Removed {count_change} {detected_role}(s)")
         else:
-            # Add new resource
             if is_adding:
+                # Add new resource with reasonable defaults
                 new_resource = {
                     'role': detected_role,
                     'count': count_change,
-                    'effort_months': 3,
+                    'effort_months': updated_scope.get('timeline', {}).get('total_duration_months', 6),
                     'allocation_percentage': 100,
-                    'monthly_rate': 8000,
-                    'total_cost': count_change * 3 * 8000
+                    'monthly_rate': self._get_default_rate(detected_role),
+                    'total_cost': count_change * updated_scope.get('timeline', {}).get('total_duration_months', 6) * self._get_default_rate(detected_role)
                 }
                 resources.append(new_resource)
                 changes.append(f"Added {count_change} new {detected_role}(s)")
@@ -334,27 +436,29 @@ Return ONLY JSON:
         
         return {
             'updated_scope': updated_scope,
-            'response': f"I've updated the team. {changes[0]}. New total: ${total_cost:,.2f}",
+            'response': f"I've updated the team composition. {changes[0]}. New total: ${total_cost:,.2f}",
             'changes_made': changes,
-            'intent': 'modify_resources'
+            'intent': RefinementIntent.MODIFY_RESOURCES
         }
     
-    async def _generic_refinement(self, message: str, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle generic refinement requests"""
+    async def _generic_refinement(self, message: str, scope: Dict[str, Any], intent: RefinementIntent) -> Dict[str, Any]:
+        """Enhanced generic refinement with better suggestions"""
         
         prompt = f"""
-User wants to refine the project scope. 
+User wants to refine the project scope. Provide helpful, specific guidance.
 
 User Request: "{message}"
 
 Current Scope Summary:
 - Total Duration: {scope.get('timeline', {}).get('total_duration_months', 0)} months
 - Total Cost: ${scope.get('cost_breakdown', {}).get('total_cost', 0):,.2f}
-- Activities: {len(scope.get('activities', []))}
-- Resources: {len(scope.get('resources', []))}
+- Team Size: {len(scope.get('resources', []))} roles
+- Activities: {len(scope.get('activities', []))} tasks
 
-Provide a helpful response explaining what changes can be made. Be specific and actionable.
-Return ONLY plain text response (no JSON).
+Based on their request, suggest specific, actionable refinements they can make.
+Be concise but helpful.
+
+Return ONLY plain text response.
 """
         
         try:
@@ -363,44 +467,67 @@ Return ONLY plain text response (no JSON).
             return {
                 'updated_scope': scope,
                 'response': response.text.strip(),
-                'changes_made': ['No automatic changes made - awaiting specific instruction'],
-                'intent': 'generic'
+                'changes_made': ['No automatic changes made - provided guidance only'],
+                'intent': intent
             }
             
         except Exception as e:
             return {
                 'updated_scope': scope,
-                'response': "I understand you'd like to refine the scope. Could you be more specific? For example: 'Make timeline 2 weeks shorter' or 'Add security testing' or 'Apply 10% discount'",
+                'response': "I understand you'd like to refine the scope. Here are some specific changes you can request:\n• 'Make timeline 2 weeks shorter/longer'\n• 'Add security testing activities' \n• 'Apply 10% discount or $5000 off'\n• 'Add 2 more frontend developers'\n• 'Remove manual testing phase'",
                 'changes_made': [],
-                'intent': 'generic'
+                'intent': intent
             }
     
     def _recalculate_timeline(self, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Recalculate timeline based on activities"""
+        """Enhanced timeline recalculation with parallel work estimation"""
         activities = scope.get('activities', [])
         total_effort_days = sum(a.get('effort_days', 0) for a in activities)
         
-        # Rough estimate: assume 5-day weeks and parallel work
-        estimated_weeks = max(1, int(total_effort_days / 5 / 3))  # Assuming 3 parallel streams
+        # Enhanced estimation considering parallel work streams
+        # Assume 3-5 parallel streams based on project size
+        parallel_streams = min(5, max(3, len(activities) // 10))
+        estimated_weeks = max(4, int(total_effort_days / 5 / parallel_streams))
         
         timeline = scope.get('timeline', {})
         timeline['total_duration_months'] = round(estimated_weeks / 4.33, 1)
+        timeline['total_duration_weeks'] = estimated_weeks
+        
+        # Update phase durations proportionally
+        phases = timeline.get('phases', [])
+        if phases:
+            total_phase_weeks = sum(p.get('duration_weeks', 0) for p in phases)
+            if total_phase_weeks > 0:
+                scale_factor = estimated_weeks / total_phase_weeks
+                current_week = 1
+                for phase in phases:
+                    new_duration = max(2, int(phase.get('duration_weeks', 4) * scale_factor))
+                    phase['duration_weeks'] = new_duration
+                    phase['start_week'] = current_week
+                    phase['end_week'] = current_week + new_duration - 1
+                    current_week += new_duration
         
         scope['timeline'] = timeline
         return scope
     
     def _recalculate_resources(self, scope: Dict[str, Any]) -> Dict[str, Any]:
-        """Recalculate resource costs based on timeline"""
+        """Enhanced resource recalculation with timeline alignment"""
         timeline = scope.get('timeline', {})
         total_months = timeline.get('total_duration_months', 6)
         
         resources = scope.get('resources', [])
         for resource in resources:
-            # Adjust effort_months based on new timeline
-            resource['effort_months'] = min(
-                total_months,
-                resource.get('effort_months', total_months)
-            )
+            # Adjust effort_months based on new timeline, but respect role constraints
+            # PMs typically work full duration, developers might phase in/out
+            if resource['role'] in ['Project Manager', 'Business Analyst']:
+                resource['effort_months'] = total_months
+            else:
+                # Technical roles might have staggered allocation
+                resource['effort_months'] = min(
+                    total_months,
+                    resource.get('effort_months', total_months * 0.8)  # Default to 80% of timeline
+                )
+            
             resource['total_cost'] = (
                 resource['count'] * 
                 resource['effort_months'] * 
@@ -421,26 +548,57 @@ Return ONLY plain text response (no JSON).
         
         return scope
     
+    def _get_default_rate(self, role: str) -> float:
+        """Get default monthly rate for a role"""
+        rates = {
+            'Project Manager': 10000,
+            'Business Analyst': 8000,
+            'UI/UX Designer': 7000,
+            'Frontend Developer': 8000,
+            'Backend Developer': 8500,
+            'Full Stack Developer': 9000,
+            'QA Engineer': 7000,
+            'DevOps Engineer': 9000,
+            'Solution Architect': 12000,
+            'Data Engineer': 9500,
+            'ML Engineer': 11000,
+            'Security Engineer': 10000,
+            'Developer': 8000
+        }
+        return rates.get(role, 8000)
+    
     def _parse_json_response(self, response_text: str) -> Dict[str, Any]:
-        """Parse JSON from AI response"""
+        """Enhanced JSON parsing with better error handling"""
         try:
-            # Remove markdown code blocks
+            # Remove markdown code blocks and clean
             text = re.sub(r'```json\s*', '', response_text)
             text = re.sub(r'```\s*', '', text).strip()
             
-            # Find JSON object
-            start = text.find('{')
-            end = text.rfind('}') + 1
+            # Find JSON object with multiple attempts
+            json_pattern = r'\{[^{}]*\{[^{}]*\}[^{}]*\}|\{[^{}]*\}'
+            matches = re.finditer(json_pattern, text, re.DOTALL)
             
-            if start != -1 and end > start:
-                json_str = text[start:end]
-                return json.loads(json_str)
-            else:
-                raise ValueError("No JSON found in response")
+            for match in matches:
+                try:
+                    json_str = match.group()
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    continue
+            
+            # If no valid JSON found, try parsing as simple structure
+            raise ValueError("No valid JSON found in response")
                 
         except Exception as e:
             print(f"JSON parsing error: {e}")
-            raise
+            # Return safe default
+            return {
+                "action": "add",
+                "activity_name": "Additional task",
+                "target_phase": "Development", 
+                "effort_days": 5,
+                "dependencies": [],
+                "resources_required": ["Developer"]
+            }
 
 
 # Global instance

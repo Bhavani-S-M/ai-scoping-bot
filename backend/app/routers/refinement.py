@@ -1,0 +1,31 @@
+#backend/app/routers/refinement.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Any
+
+from app.config.database import get_async_session
+from app.schemas.project_schemas import RefinementRequest, RefinementResponse
+from app.utils.refinement_engine import refinement_engine
+from app.auth.router import current_active_user
+
+router = APIRouter()
+
+@router.post("/refine", response_model=RefinementResponse)
+async def refine_scope(
+    request: RefinementRequest,
+    db: AsyncSession = Depends(get_async_session),
+    user = Depends(current_active_user)
+):
+    """
+    Enhanced scope refinement endpoint with real-time updates
+    """
+    try:
+        result = await refinement_engine.process_refinement_request(
+            user_message=request.message,
+            current_scope=request.current_scope
+        )
+        
+        return RefinementResponse(**result)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Refinement failed: {str(e)}")
