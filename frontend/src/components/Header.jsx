@@ -7,7 +7,7 @@ const Header = () => {
         <h1 className="text-2xl font-bold text-gray-800">
           AI Scoping Bot
         </h1>
-        <span className="text-gray-600">Demo Mode - No Login Required</span>
+
       </div>
     </header>
   )
