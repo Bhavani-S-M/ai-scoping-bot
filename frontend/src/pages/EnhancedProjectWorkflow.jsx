@@ -1,312 +1,560 @@
 //frontend/src/pages/EnhancedProjectWorkflow.jsx
-import React, { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import axios from '../config/axios'
+import React, { useState, useEffect } from 'react';
+import { FileUp, Bot, CheckCircle, Download, MessageCircle, TrendingUp, AlertTriangle, Layers } from 'lucide-react';
 
 const EnhancedProjectWorkflow = () => {
-  const { projectId } = useParams()
-  const [currentStep, setCurrentStep] = useState(1)
-  const [project, setProject] = useState(null)
-  const [analysis, setAnalysis] = useState(null)
-  const [scope, setScope] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
+  const [projectId] = useState('demo-project-123');
+  const [currentStep, setCurrentStep] = useState(1);
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [extractedEntities, setExtractedEntities] = useState(null);
+  const [scope, setScope] = useState(null);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatHistory, setChatHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  
   const steps = [
-    { id: 1, name: 'Project Info', icon: '📝' },
-    { id: 2, name: 'RAG Analysis', icon: '🔍' },
-    { id: 3, name: 'Scope Generation', icon: '📊' },
-    { id: 4, name: 'Review & Export', icon: '📥' }
-  ]
+    { id: 1, name: 'Upload Document', icon: FileUp },
+    { id: 2, name: 'AI Analysis', icon: Bot },
+    { id: 3, name: 'Comprehensive Scope', icon: Layers },
+    { id: 4, name: 'Refine', icon: MessageCircle },
+    { id: 5, name: 'Finalize & Export', icon: CheckCircle }
+  ];
+
+  // Demo scope data
+  const demoScope = {
+    overview: {
+      project_summary: "Comprehensive web application development for healthcare patient management system with AI-powered diagnostics assistance.",
+      key_objectives: [
+        "Develop secure patient management platform",
+        "Integrate AI diagnostic support",
+        "Ensure HIPAA compliance",
+        "Enable real-time data synchronization"
+      ],
+      success_metrics: [
+        "95% system uptime",
+        "< 2 second page load time",
+        "HIPAA compliance certification",
+        "Support for 10,000+ concurrent users"
+      ]
+    },
+    timeline: {
+      total_duration_months: 6,
+      phases: [
+        {
+          phase_name: "Planning & Requirements",
+          duration_weeks: 4,
+          start_week: 1,
+          end_week: 4,
+          milestones: ["Requirements finalized", "Architecture approved", "Security plan ready"]
+        },
+        {
+          phase_name: "Design & Prototyping",
+          duration_weeks: 4,
+          start_week: 5,
+          end_week: 8,
+          milestones: ["UI/UX designs approved", "Database schema finalized", "API specifications ready"]
+        },
+        {
+          phase_name: "Development",
+          duration_weeks: 12,
+          start_week: 9,
+          end_week: 20,
+          milestones: ["Core features complete", "AI integration done", "Testing environment ready"]
+        },
+        {
+          phase_name: "Testing & QA",
+          duration_weeks: 4,
+          start_week: 21,
+          end_week: 24,
+          milestones: ["All tests passed", "Security audit complete", "Performance optimized"]
+        }
+      ]
+    },
+    resources: [
+      { role: "Project Manager", count: 1, effort_months: 6, monthly_rate: 10000, total_cost: 60000 },
+      { role: "Business Analyst", count: 1, effort_months: 3, monthly_rate: 8000, total_cost: 24000 },
+      { role: "UI/UX Designer", count: 2, effort_months: 2, monthly_rate: 7000, total_cost: 28000 },
+      { role: "Frontend Developer", count: 2, effort_months: 5, monthly_rate: 8000, total_cost: 80000 },
+      { role: "Backend Developer", count: 3, effort_months: 5, monthly_rate: 8500, total_cost: 127500 },
+      { role: "QA Engineer", count: 2, effort_months: 3, monthly_rate: 7000, total_cost: 42000 },
+      { role: "DevOps Engineer", count: 1, effort_months: 4, monthly_rate: 9000, total_cost: 36000 }
+    ],
+    cost_breakdown: {
+      total_cost: 397500,
+      contingency_percentage: 15,
+      contingency_amount: 59625
+    },
+    diagrams: {
+      architecture: {
+        code: `graph TD
+    A[Patient/Healthcare Provider] --> B[Web Frontend]
+    A --> C[Mobile App]
+    B --> D[API Gateway]
+    C --> D
+    D --> E[Authentication Service]
+    D --> F[Patient Management Service]
+    D --> G[AI Diagnostic Service]
+    F --> H[(PostgreSQL Database)]
+    G --> I[ML Model Server]
+    G --> J[External Medical APIs]
+    D --> K[File Storage S3]
+    
+    style B fill:#e1f5ff
+    style D fill:#fff4e1
+    style F fill:#ffe1f5
+    style G fill:#e1ffe1`
+      },
+      workflow: {
+        code: `flowchart LR
+    A[Requirements] --> B[Design]
+    B --> C[Dev: Frontend]
+    B --> D[Dev: Backend]
+    C --> E[Integration]
+    D --> E
+    E --> F[Testing]
+    F --> G[Deployment]
+    G --> H[Monitoring]`
+      }
+    },
+    metadata: {
+      confidence_score: 0.87,
+      rag_sources_count: 3,
+      version: '2.0'
+    },
+    assumptions: [
+      "Client will provide timely feedback and approvals",
+      "All required resources will be available as planned",
+      "HIPAA compliance requirements are clearly documented",
+      "Third-party medical APIs will be available"
+    ]
+  };
 
   useEffect(() => {
-    if (projectId) {
-      loadProject()
+    // Simulate initial data loading
+    if (currentStep >= 3) {
+      setScope(demoScope);
     }
-  }, [projectId])
+  }, [currentStep]);
 
-  const loadProject = async () => {
-    try {
-      const response = await axios.get(`/api/projects/${projectId}`)
-      setProject(response.data)
-    } catch (err) {
-      setError('Failed to load project')
-    }
-  }
-
-  const handleRAGAnalysis = async () => {
-    setLoading(true)
-    setError('')
-    
-    try {
-      const response = await axios.post(`/api/projects/${projectId}/analyze-with-rag`)
-      setAnalysis(response.data)
-      setCurrentStep(2)
-    } catch (err) {
-      setError('RAG analysis failed: ' + (err.response?.data?.detail || err.message))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleGenerateScope = async () => {
-    setLoading(true)
-    setError('')
-    
-    try {
-      const response = await axios.post(`/api/projects/${projectId}/generate-scope-with-rag`, {
-        answered_questions: analysis?.questions?.map(q => ({
-          question_id: q.id,
-          question: q.question,
-          answer: "User provided answer" // In real app, collect answers from user
-        }))
-      })
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setUploadedFile(file);
+      setLoading(true);
       
-      setScope(response.data)
-      setCurrentStep(3)
-    } catch (err) {
-      setError('Scope generation failed: ' + (err.response?.data?.detail || err.message))
-    } finally {
-      setLoading(false)
+      // Simulate entity extraction
+      setTimeout(() => {
+        setExtractedEntities({
+          project_type: "Web Application",
+          domain: "Healthcare",
+          complexity: "complex",
+          deliverables: ["Patient Management System", "AI Diagnostics", "Mobile App"],
+          tech_stack: ["React", "Node.js", "PostgreSQL", "TensorFlow"],
+          compliance_requirements: ["HIPAA", "GDPR"],
+          estimated_duration: "6 months"
+        });
+        setLoading(false);
+        setCurrentStep(2);
+      }, 2000);
     }
-  }
+  };
+
+  const generateScope = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setScope(demoScope);
+      setCurrentStep(3);
+      setLoading(false);
+    }, 1500);
+  };
+
+  const handleRefinement = () => {
+    if (!chatMessage.trim()) return;
+    
+    setLoading(true);
+    const userMsg = chatMessage;
+    setChatMessage('');
+    
+    // Simulate AI response
+    setTimeout(() => {
+      const newHistory = [
+        ...chatHistory,
+        { role: 'user', message: userMsg },
+        { 
+          role: 'assistant', 
+          message: `I've updated the scope based on your request: "${userMsg}"`,
+          changes: ['Timeline adjusted', 'Resources optimized', 'Costs recalculated']
+        }
+      ];
+      setChatHistory(newHistory);
+      setLoading(false);
+    }, 1000);
+  };
+
+  const renderMermaidDiagram = (code) => {
+    return (
+      <div className="bg-white p-4 rounded border">
+        <div className="font-mono text-sm whitespace-pre-wrap bg-gray-50 p-4 rounded">
+          {code}
+        </div>
+        <p className="text-xs text-gray-500 mt-2">
+          💡 In production, this renders as an interactive diagram
+        </p>
+      </div>
+    );
+  };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
       {/* Progress Steps */}
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
         <div className="flex items-center justify-between">
-          {steps.map((step, index) => (
-            <React.Fragment key={step.id}>
-              <div className="flex flex-col items-center">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-                  currentStep >= step.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-400'
-                }`}>
-                  {step.icon}
+          {steps.map((step, index) => {
+            const StepIcon = step.icon;
+            return (
+              <React.Fragment key={step.id}>
+                <div className="flex flex-col items-center">
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                    currentStep >= step.id ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-400'
+                  } transition-all duration-300`}>
+                    <StepIcon size={24} />
+                  </div>
+                  <span className="mt-2 text-sm font-medium text-center max-w-[80px]">{step.name}</span>
                 </div>
-                <span className="mt-2 text-sm font-medium">{step.name}</span>
-              </div>
-              {index < steps.length - 1 && (
-                <div className={`flex-1 h-1 mx-4 ${
-                  currentStep > step.id ? 'bg-blue-500' : 'bg-gray-200'
-                }`} />
-              )}
-            </React.Fragment>
-          ))}
+                {index < steps.length - 1 && (
+                  <div className={`flex-1 h-1 mx-4 ${
+                    currentStep > step.id ? 'bg-blue-500' : 'bg-gray-200'
+                  } transition-all duration-300`} />
+                )}
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+      {/* Step 1: Upload Document */}
+      {currentStep === 1 && (
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <FileUp className="text-blue-500" />
+            Upload Project Document
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Upload your RFP, SOW, or requirements document. Our AI will extract key entities automatically.
+          </p>
+          
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors">
+            <input
+              type="file"
+              onChange={handleFileUpload}
+              accept=".pdf,.docx,.doc,.txt"
+              className="hidden"
+              id="file-upload"
+            />
+            <label htmlFor="file-upload" className="cursor-pointer">
+              <FileUp size={48} className="mx-auto text-gray-400 mb-4" />
+              <p className="text-lg font-medium mb-2">Click to upload or drag and drop</p>
+              <p className="text-sm text-gray-500">PDF, DOCX, or TXT (Max 10MB)</p>
+            </label>
+          </div>
+
+          {loading && (
+            <div className="mt-6 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Extracting entities from document...</p>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Step 1: Project Info */}
-      {currentStep === 1 && project && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">Step 1: Project Information</h2>
+      {/* Step 2: Extracted Entities */}
+      {currentStep === 2 && extractedEntities && (
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+            <Bot className="text-green-500" />
+            Extracted Project Information
+          </h2>
           
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div>
-              <h3 className="font-semibold">Project Details</h3>
-              <p><strong>Name:</strong> {project.name}</p>
-              <p><strong>Domain:</strong> {project.domain}</p>
-              <p><strong>Complexity:</strong> {project.complexity}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-2">Project Details</h3>
+              <p><strong>Type:</strong> {extractedEntities.project_type}</p>
+              <p><strong>Domain:</strong> {extractedEntities.domain}</p>
+              <p><strong>Complexity:</strong> {extractedEntities.complexity}</p>
+              <p><strong>Duration:</strong> {extractedEntities.estimated_duration}</p>
             </div>
-            <div>
-              <h3 className="font-semibold">Technical Info</h3>
-              <p><strong>Tech Stack:</strong> {project.tech_stack || 'Not specified'}</p>
-              <p><strong>Use Cases:</strong> {project.use_cases || 'Not specified'}</p>
+            
+            <div className="bg-green-50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-2">Technology & Compliance</h3>
+              <p><strong>Tech Stack:</strong> {extractedEntities.tech_stack.join(', ')}</p>
+              <p><strong>Compliance:</strong> {extractedEntities.compliance_requirements.join(', ')}</p>
             </div>
           </div>
 
+          <div className="bg-purple-50 p-4 rounded-lg mb-6">
+            <h3 className="font-semibold mb-2">Key Deliverables</h3>
+            <ul className="list-disc list-inside">
+              {extractedEntities.deliverables.map((item, idx) => (
+                <li key={idx}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
           <button
-            onClick={handleRAGAnalysis}
+            onClick={generateScope}
             disabled={loading}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium"
+            className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium disabled:opacity-50 flex items-center gap-2"
           >
-            {loading ? 'Analyzing...' : 'Start RAG Analysis →'}
+            <TrendingUp size={20} />
+            Generate Comprehensive Scope →
           </button>
         </div>
       )}
 
-      {/* Step 2: RAG Analysis Results */}
-      {currentStep === 2 && analysis && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">Step 2: RAG Analysis Results</h2>
-          
-          {/* Similar Projects */}
-          {analysis.similar_projects && analysis.similar_projects.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-xl font-semibold mb-3">📊 Similar Historical Projects</h3>
+      {/* Step 3 & 4: Comprehensive Scope with Chat */}
+      {currentStep >= 3 && scope && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Scope Display - 2 columns */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Confidence Badge */}
+            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg p-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">AI Confidence Score</h3>
+                <p className="text-sm opacity-90">Based on {scope.metadata.rag_sources_count} similar projects</p>
+              </div>
+              <div className="text-4xl font-bold">{(scope.metadata.confidence_score * 100).toFixed(0)}%</div>
+            </div>
+
+            {/* Overview */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">📋 Project Overview</h2>
+              <p className="text-gray-700 mb-4">{scope.overview.project_summary}</p>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {analysis.similar_projects.map((proj, idx) => (
-                  <div key={idx} className="border rounded-lg p-4 bg-blue-50">
-                    <h4 className="font-semibold">{proj.project_name}</h4>
-                    <p>Domain: {proj.domain} | Complexity: {proj.complexity}</p>
-                    <p>Cost: ${proj.total_cost?.toLocaleString()} | Duration: {proj.duration} months</p>
-                    <p className="text-sm text-green-600">Similarity: {(proj.similarity_score * 100).toFixed(1)}%</p>
-                    {proj.key_insights && (
-                      <div className="mt-2">
-                        <p className="text-sm font-semibold">Key Insights:</p>
-                        <ul className="text-sm list-disc list-inside">
-                          {proj.key_insights.map((insight, i) => (
-                            <li key={i}>{insight}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                <div>
+                  <h3 className="font-semibold mb-2">Key Objectives</h3>
+                  <ul className="space-y-1 text-sm">
+                    {scope.overview.key_objectives.map((obj, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <CheckCircle size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                        <span>{obj}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-2">Success Metrics</h3>
+                  <ul className="space-y-1 text-sm">
+                    {scope.overview.success_metrics.map((metric, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <TrendingUp size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
+                        <span>{metric}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            {/* Architecture Diagram */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">🏗️ System Architecture</h2>
+              {renderMermaidDiagram(scope.diagrams.architecture.code)}
+            </div>
+
+            {/* Workflow Diagram */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">📊 Project Workflow</h2>
+              {renderMermaidDiagram(scope.diagrams.workflow.code)}
+            </div>
+
+            {/* Timeline */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">📅 Timeline & Milestones</h2>
+              <p className="text-2xl font-bold text-blue-600 mb-4">
+                {scope.timeline.total_duration_months} months
+              </p>
+              
+              <div className="space-y-4">
+                {scope.timeline.phases.map((phase, idx) => (
+                  <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
+                    <h3 className="font-semibold text-lg">{phase.phase_name}</h3>
+                    <p className="text-sm text-gray-600">
+                      {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
+                    </p>
+                    <div className="mt-2">
+                      <p className="text-sm font-medium">Milestones:</p>
+                      <ul className="text-sm list-disc list-inside">
+                        {phase.milestones.map((milestone, midx) => (
+                          <li key={midx}>{milestone}</li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Questions */}
-          <div className="mb-6">
-            <h3 className="text-xl font-semibold mb-3">❓ Clarifying Questions</h3>
-            <div className="space-y-4">
-              {analysis.questions.map((q, idx) => (
-                <div key={q.id} className="border-l-4 border-blue-500 pl-4 py-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="bg-gray-200 px-2 py-1 rounded text-sm">
-                      {q.category}
-                    </span>
-                    {q.importance === 'high' && (
-                      <span className="bg-red-100 text-red-600 px-2 py-1 rounded text-sm">
-                        High Priority
-                      </span>
-                    )}
-                  </div>
-                  <p className="font-medium">{q.question}</p>
-                  {q.suggested_answers && q.suggested_answers.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {q.suggested_answers.map((answer, i) => (
-                        <label key={i} className="flex items-center gap-2">
-                          <input type="radio" name={q.id} value={answer} className="w-4 h-4" />
-                          <span className="text-sm">{answer}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+            {/* Resources & Costs */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">👥 Resources & Costs</h2>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left">Role</th>
+                      <th className="px-4 py-2 text-right">Count</th>
+                      <th className="px-4 py-2 text-right">Months</th>
+                      <th className="px-4 py-2 text-right">Rate</th>
+                      <th className="px-4 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {scope.resources.map((resource, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">{resource.role}</td>
+                        <td className="px-4 py-2 text-right">{resource.count}</td>
+                        <td className="px-4 py-2 text-right">{resource.effort_months}</td>
+                        <td className="px-4 py-2 text-right">${resource.monthly_rate.toLocaleString()}</td>
+                        <td className="px-4 py-2 text-right font-semibold">${resource.total_cost.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-blue-50 font-bold">
+                    <tr>
+                      <td colSpan="4" className="px-4 py-2 text-right">TOTAL:</td>
+                      <td className="px-4 py-2 text-right text-blue-600">
+                        ${scope.cost_breakdown.total_cost.toLocaleString()}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan="4" className="px-4 py-2 text-right text-sm">Contingency ({scope.cost_breakdown.contingency_percentage}%):</td>
+                      <td className="px-4 py-2 text-right text-sm">
+                        ${scope.cost_breakdown.contingency_amount.toLocaleString()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          </div>
 
-          <button
-            onClick={handleGenerateScope}
-            disabled={loading}
-            className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium"
-          >
-            {loading ? 'Generating Scope...' : 'Generate Project Scope →'}
-          </button>
-        </div>
-      )}
-
-      {/* Step 3: Generated Scope */}
-      {currentStep === 3 && scope && (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">Step 3: Generated Project Scope</h2>
-          
-          {/* RAG Insights */}
-          {scope.rag_insights && (
-            <div className="mb-6 p-4 bg-green-50 rounded-lg">
-              <h3 className="font-semibold text-green-800">🎯 RAG-Enhanced Scope</h3>
-              <p>This scope was enhanced using insights from {scope.rag_insights.similar_projects_count} similar historical projects.</p>
-              <p>Most similar project: <strong>{scope.rag_insights.most_similar_project}</strong></p>
-            </div>
-          )}
-
-          {/* Scope Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-xl font-semibold mb-3">📋 Project Overview</h3>
-              <p className="mb-4">{scope.overview?.project_summary}</p>
-              
-              <h4 className="font-semibold mb-2">Key Objectives</h4>
-              <ul className="list-disc list-inside space-y-1 mb-4">
-                {scope.overview?.key_objectives?.map((obj, idx) => (
-                  <li key={idx}>{obj}</li>
+            {/* Assumptions */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+              <h3 className="font-semibold mb-2 flex items-center gap-2">
+                <AlertTriangle size={20} className="text-yellow-600" />
+                Key Assumptions
+              </h3>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                {scope.assumptions.map((assumption, idx) => (
+                  <li key={idx}>{assumption}</li>
                 ))}
               </ul>
             </div>
 
-            <div>
-              <h3 className="text-xl font-semibold mb-3">💰 Cost Summary</h3>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">
-                  ${scope.cost_breakdown?.total_cost?.toLocaleString()}
-                </p>
-                <p className="text-sm text-gray-600">Total Project Cost</p>
-                {scope.cost_breakdown?.contingency_amount && (
-                  <p className="text-sm mt-2">
-                    Contingency: ${scope.cost_breakdown.contingency_amount.toLocaleString()} 
-                    ({scope.cost_breakdown.contingency_percentage}%)
-                  </p>
+            {/* Export Options */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Download size={24} />
+                Export Options
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <button className="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
+                  📄 PDF
+                </button>
+                <button className="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
+                  📊 Excel
+                </button>
+                <button className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
+                  🔧 JSON
+                </button>
+                <button className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-3 rounded-lg font-medium flex flex-col items-center gap-2">
+                  📦 All (ZIP)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Chat Refinement - 1 column */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow p-6 sticky top-6">
+              <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <MessageCircle className="text-blue-500" />
+                Refine with AI
+              </h2>
+              
+              <div className="mb-4 h-96 overflow-y-auto border rounded p-4 space-y-4 bg-gray-50">
+                {chatHistory.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <Bot size={48} className="mx-auto mb-4 text-gray-400" />
+                    <p className="mb-2 font-medium">Ask me to refine the scope!</p>
+                    <div className="text-xs space-y-1 mt-4 text-left">
+                      <p className="font-semibold">Example requests:</p>
+                      <p>• "Make the timeline 2 weeks shorter"</p>
+                      <p>• "Add security testing activities"</p>
+                      <p>• "Apply 10% discount"</p>
+                      <p>• "Remove manual testing tasks"</p>
+                      <p>• "Add 2 more frontend developers"</p>
+                    </div>
+                  </div>
+                ) : (
+                  chatHistory.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`${
+                        msg.role === 'user' ? 'bg-blue-50 ml-8' : 'bg-white mr-8 border'
+                      } p-3 rounded-lg`}
+                    >
+                      <p className="text-xs font-semibold mb-1 text-gray-600">
+                        {msg.role === 'user' ? '👤 You' : '🤖 AI Assistant'}
+                      </p>
+                      <p className="text-sm">{msg.message}</p>
+                      {msg.changes && (
+                        <div className="mt-2 text-xs bg-green-50 p-2 rounded">
+                          <strong>Changes:</strong>
+                          <ul className="list-disc list-inside mt-1">
+                            {msg.changes.map((change, cidx) => (
+                              <li key={cidx}>{change}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
 
-              <h4 className="font-semibold mt-4 mb-2">📅 Timeline</h4>
-              <p>{scope.timeline?.total_duration_months} months total</p>
-              
-              <div className="mt-2 space-y-2">
-                {scope.timeline?.phases?.map((phase, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span>{phase.phase_name}</span>
-                    <span>{phase.duration_weeks} weeks</span>
-                  </div>
-                ))}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleRefinement()}
+                  placeholder="Type your refinement request..."
+                  className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+                  disabled={loading}
+                />
+                <button
+                  onClick={handleRefinement}
+                  disabled={loading || !chatMessage.trim()}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-medium disabled:opacity-50"
+                >
+                  Send
+                </button>
               </div>
-            </div>
-          </div>
 
-          {/* Resources Table */}
-          <div className="mt-6">
-            <h3 className="text-xl font-semibold mb-3">👥 Resource Plan</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Role</th>
-                    <th className="px-4 py-2 text-right">Count</th>
-                    <th className="px-4 py-2 text-right">Effort (months)</th>
-                    <th className="px-4 py-2 text-right">Monthly Rate</th>
-                    <th className="px-4 py-2 text-right">Total Cost</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {scope.resources?.map((resource, idx) => (
-                    <tr key={idx}>
-                      <td className="px-4 py-2">{resource.role}</td>
-                      <td className="px-4 py-2 text-right">{resource.count}</td>
-                      <td className="px-4 py-2 text-right">{resource.effort_months}</td>
-                      <td className="px-4 py-2 text-right">
-                        ${resource.monthly_rate?.toLocaleString()}
-                      </td>
-                      <td className="px-4 py-2 text-right font-semibold">
-                        ${resource.total_cost?.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <button
+                onClick={() => setCurrentStep(5)}
+                className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2"
+              >
+                <CheckCircle size={20} />
+                Finalize Scope
+              </button>
             </div>
-          </div>
-
-          <div className="mt-6 flex gap-4">
-            <button className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-medium">
-              Export as PDF
-            </button>
-            <button className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium">
-              Export as Excel
-            </button>
           </div>
         </div>
       )}
     </div>
-  )
-}
+  );
+};
 
-export default EnhancedProjectWorkflow
+export default EnhancedProjectWorkflow;
