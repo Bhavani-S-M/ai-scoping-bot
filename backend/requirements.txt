@@ -9,7 +9,7 @@ sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
 alembic==1.12.1
 
-# Authentication (commented out for now)
+# Authentication
 fastapi-users[sqlalchemy]==12.1.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
@@ -33,3 +33,7 @@ Pillow==10.1.0
 # Utilities
 python-dotenv==1.0.0
 pydantic==2.5.0
+
+# Additional for document parsing (already included, but confirming)
+# PyPDF2==3.0.1  (already listed above)
+# python-docx==1.1.0  (already listed above)

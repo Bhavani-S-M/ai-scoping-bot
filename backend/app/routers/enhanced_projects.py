@@ -1,4 +1,6 @@
 # backend/app/routers/enhanced_projects.py
+# At the top of backend/app/routers/enhanced_projects.py
+from app.utils.refinement_engine import refinement_engine
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -391,3 +393,42 @@ async def get_project(
         return project
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+# Add this endpoint to backend/app/routers/enhanced_projects.py
+
+@router.post("/{project_id}/chat")
+async def refine_scope_interactive(
+    project_id: uuid.UUID,
+    request: ChatMessage,
+    db: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user)
+):
+    """
+    Interactive scope refinement via chat
+    """
+    try:
+        result = await db.execute(
+            select(ProjectModel).where(
+                ProjectModel.id == project_id,
+                ProjectModel.owner_id == user.id
+            )
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Process refinement
+        refinement_result = await refinement_engine.process_refinement_request(
+            user_message=request.message,
+            current_scope=request.current_scope
+        )
+        
+        return {
+            "updated_scope": refinement_result['updated_scope'],
+            "response": refinement_result['response'],
+            "changes_made": refinement_result['changes_made'],
+            "intent": refinement_result['intent']
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Refinement failed: {str(e)}")
