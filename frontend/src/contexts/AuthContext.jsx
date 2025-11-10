@@ -1,6 +1,6 @@
 // frontend/src/contexts/AuthContext.jsx
 import React, { createContext, useState, useContext, useEffect } from 'react'
-import axios from '../config/axios'
+import api from '../config/axios'
 
 const AuthContext = createContext()
 
@@ -17,26 +17,19 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token')
-    if (token) {
-      checkAuth()
-    } else {
-      setLoading(false)
-    }
+    checkAuth()
   }, [])
 
   const checkAuth = async () => {
     try {
-      const token = localStorage.getItem('access_token')
-      const response = await axios.get('/api/users/me', {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      })
-      setUser(response.data)
+      const token = localStorage.getItem('auth_token')
+      if (token) {
+        const response = await api.get('/api/users/me')
+        setUser(response.data)
+      }
     } catch (error) {
       console.error('Auth check failed:', error)
-      localStorage.removeItem('access_token')
+      localStorage.removeItem('auth_token')
       setUser(null)
     } finally {
       setLoading(false)
@@ -45,45 +38,63 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const formData = new URLSearchParams()
-      formData.append('username', email)
-      formData.append('password', password)
+      console.log('🔐 Attempting login with:', { email })
       
-      const response = await axios.post('/api/auth/jwt/login', formData, {
+      // Use custom login endpoint with JSON body
+      const response = await api.post('/api/auth/login', {
+        email: email,
+        password: password
+      }, {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
       })
-      
+
+      console.log('✅ Login response:', response.data)
+
       const { access_token } = response.data
-      
-      localStorage.setItem('access_token', access_token)
-      
-      // Set axios default header
-      axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
-      
-      await checkAuth()
-      return { success: true }
+
+      if (access_token) {
+        localStorage.setItem('auth_token', access_token)
+        
+        // Update axios default header
+        api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
+        
+        // Get user info
+        await checkAuth()
+        
+        return { success: true }
+      } else {
+        return { success: false, error: 'No access token received' }
+      }
     } catch (error) {
-      console.error('Login failed:', error)
+      console.error('❌ Login failed:', error)
+      const errorMessage = error.response?.data?.detail || 'Login failed. Please check your credentials.'
       return {
         success: false,
-        error: error.response?.data?.detail || 'Login failed. Please check your credentials.'
+        error: errorMessage
       }
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('access_token')
-    delete axios.defaults.headers.common['Authorization']
-    setUser(null)
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/jwt/logout')
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      localStorage.removeItem('auth_token')
+      delete api.defaults.headers.common['Authorization']
+      setUser(null)
+    }
   }
 
   const value = {
     user,
     login,
     logout,
-    loading
+    loading,
+    checkAuth
   }
 
   return (

@@ -1,86 +1,76 @@
 # backend/startup.py
 import asyncio
-import sys
-import os
-
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from app.utils.rag_engine import rag_engine
-from app.config.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from app.config.database import get_async_session, engine, Base
 from app.models.user_models import User
-from sqlalchemy import select, delete
-import uuid
+from fastapi_users.password import PasswordHelper
 
-# Import passlib - same as fastapi-users uses
-from passlib.context import CryptContext
-
-# Create password context - MUST match fastapi-users
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-async def initialize_system():
-    """Initialize system on startup"""
-    print("=" * 60)
-    print("🚀 Initializing AI Scoping Bot System")
-    print("=" * 60)
-    
-    # Initialize RAG knowledge base
-    print("\n📚 Step 1: Loading Knowledge Base...")
+async def create_demo_user():
+    """Create demo user if not exists"""
     try:
-        await rag_engine.initialize_knowledge_base()
-    except Exception as e:
-        print(f"⚠️ Knowledge base initialization warning: {e}")
-    
-    # Create demo user if doesn't exist
-    print("\n👤 Step 2: Setting up Demo User...")
-    async with AsyncSessionLocal() as session:
-        try:
-            # Check if user exists
-            result = await session.execute(
-                select(User).where(User.email == "demo@example.com")
-            )
-            existing_user = result.scalar_one_or_none()
-            
-            if existing_user:
-                # Delete and recreate to ensure correct password
-                print("   🔄 Resetting demo user...")
-                await session.execute(
-                    delete(User).where(User.email == "demo@example.com")
+        print("🔄 Starting demo user creation...")
+        
+        password_helper = PasswordHelper()
+        
+        # Ensure tables exist
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            print("✅ Database tables verified")
+        
+        # Create demo user
+        async for session in get_async_session():
+            try:
+                # Check if demo user exists
+                result = await session.execute(
+                    select(User).where(User.email == "demo@example.com")
                 )
-                await session.commit()
-            
-            # Create user with properly hashed password
-            hashed_password = pwd_context.hash("demo123")
-            
-            demo_user = User(
-                id=uuid.uuid4(),
-                username="demo_user",
-                email="demo@example.com",
-                hashed_password=hashed_password,
-                is_active=True,
-                is_verified=True,
-                is_superuser=False
-            )
-            session.add(demo_user)
-            await session.commit()
-            
-            print("✅ Demo user created successfully")
-            print("   📧 Email: demo@example.com")
-            print("   🔑 Password: demo123")
-            print(f"   🔐 Hash: {hashed_password[:50]}...")
+                existing_user = result.scalar_one_or_none()
                 
-        except Exception as e:
-            print(f"❌ Error setting up demo user: {e}")
-            await session.rollback()
-            import traceback
-            traceback.print_exc()
-    
-    print("\n" + "=" * 60)
-    print("✨ System Initialization Complete!")
-    print("🌐 Backend: http://localhost:8001")
-    print("📚 API Docs: http://localhost:8001/docs")
-    print("🎨 Frontend: http://localhost:5173")
-    print("=" * 60 + "\n")
+                if existing_user:
+                    print("✅ Demo user already exists")
+                    print(f"   Email: {existing_user.email}")
+                    print(f"   Active: {existing_user.is_active}")
+                    return
+                
+                # Create new demo user
+                print("📝 Creating demo user...")
+                hashed_password = password_helper.hash("demopassword")
+                
+                demo_user = User(
+                    email="demo@example.com",
+                    username="demo_user",
+                    hashed_password=hashed_password,
+                    is_active=True,
+                    is_verified=True,
+                    is_superuser=False
+                )
+                
+                session.add(demo_user)
+                await session.commit()
+                await session.refresh(demo_user)
+                
+                print("✅ Demo user created successfully!")
+                print(f"   Email: {demo_user.email}")
+                print(f"   Password: demopassword")
+                print(f"   Active: {demo_user.is_active}")
+                
+            except Exception as e:
+                print(f"❌ Error creating demo user: {e}")
+                await session.rollback()
+                raise
+            finally:
+                break
+                
+    except Exception as e:
+        print(f"❌ Fatal error in startup: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 if __name__ == "__main__":
-    asyncio.run(initialize_system())
+    print("=" * 50)
+    print("DEMO USER SETUP")
+    print("=" * 50)
+    asyncio.run(create_demo_user())
+    print("=" * 50)

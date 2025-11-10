@@ -1,4 +1,5 @@
 # backend/app/models/project_models.py
+# backend/app/models/project_models.py
 from sqlalchemy import Column, String, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
@@ -9,13 +10,13 @@ class Project(Base):
     __tablename__ = "projects"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(150))
-    domain = Column(String(100))
+    name = Column(String(200))  # Increased from 150
+    domain = Column(String(200))  # Increased from 100
     complexity = Column(String(50))
-    tech_stack = Column(Text)
-    use_cases = Column(Text)
-    compliance = Column(Text)
-    duration = Column(String(20))
+    tech_stack = Column(Text)  # Already Text ✓
+    use_cases = Column(Text)  # Already Text ✓
+    compliance = Column(Text)  # Already Text ✓
+    duration = Column(String(300))  # CRITICAL FIX: Increased from 20 to 300
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # No foreign keys, no relationships
