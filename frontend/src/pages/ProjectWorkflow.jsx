@@ -1,4 +1,4 @@
-// frontend/src/pages/ProjectWorkflow.jsx
+// frontend/src/pages/ProjectWorkflow.jsx - FIXED VERSION
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import axios from '../config/axios'
@@ -69,43 +69,50 @@ const ProjectWorkflow = () => {
   }
 
   // ============================================================================
-  // STEP 3: Generate Comprehensive Scope
+  // STEP 3: Generate Comprehensive Scope - FIXED!
   // ============================================================================
   
-  // In frontend/src/pages/ProjectWorkflow.jsx
-// Find the handleGenerateScope function (around line 97) and replace it with:
-
-const handleGenerateScope = async () => {
-  setLoading(true)
-  setError('')
-  
-  try {
-    // Prepare answered questions
-    const answeredQuestions = questions
-      .filter(q => answers[q.id])
-      .map(q => ({
-        question_id: q.id,
-        question: q.question,
-        answer: answers[q.id]
-      }))
+  const handleGenerateScope = async () => {
+    setLoading(true)
+    setError('')
     
-    // FIX: Use the correct endpoint with /api prefix
-    const response = await axios.post(
-      `/api/projects/${projectId}/generate-scope-with-rag`,  // Changed from /projects/
-      { answered_questions: answeredQuestions }
-    )
-    
-    setScope(response.data.scope)  // The response has a 'scope' property
-    setCurrentStep(3)
-  } catch (err) {
-    setError('Failed to generate scope: ' + (err.response?.data?.detail || err.message))
-  } finally {
-    setLoading(false)
+    try {
+      // Prepare answered questions
+      const answeredQuestions = questions
+        .filter(q => answers[q.id])
+        .map(q => ({
+          question_id: q.id,
+          question: q.question,
+          answer: answers[q.id]
+        }))
+      
+      // ✅ FIX: Use correct endpoint
+      const response = await axios.post(
+        `/api/projects/${projectId}/generate-comprehensive-scope`,
+        { answered_questions: answeredQuestions }
+      )
+      
+      console.log('✅ Scope response:', response.data); // Debug log
+      
+      // ✅ FIX: Handle response structure
+      if (response.data.scope) {
+        setScope(response.data.scope)
+        setCurrentStep(3)
+        console.log('✅ Scope set successfully:', response.data.scope);
+      } else {
+        throw new Error('No scope data in response')
+      }
+      
+    } catch (err) {
+      console.error('❌ Scope generation error:', err);
+      setError('Failed to generate scope: ' + (err.response?.data?.detail || err.message))
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
   // ============================================================================
-  // STEP 4: Chat Refinement
+  // STEP 4: Chat Refinement - FIXED!
   // ============================================================================
   
   const handleSendMessage = async () => {
@@ -121,23 +128,30 @@ const handleGenerateScope = async () => {
     setChatHistory(newHistory)
     
     try {
-      const response = await axios.post(`/api/projects/${projectId}/chat`, {
+      // ✅ FIX: Use correct refinement endpoint
+      const response = await axios.post(`/api/refinement/refine`, {
         message: chatMessage,
         current_scope: scope
       })
       
+      console.log('✅ Refinement response:', response.data);
+      
       // Update scope and add AI response
-      setScope(response.data.updated_scope)
+      if (response.data.updated_scope) {
+        setScope(response.data.updated_scope)
+      }
+      
       setChatHistory([
         ...newHistory,
         {
           role: 'assistant',
-          message: response.data.response,
+          message: response.data.response || 'Scope updated successfully',
           changes: response.data.changes_made
         }
       ])
       setChatMessage('')
     } catch (err) {
+      console.error('❌ Chat error:', err);
       setError('Chat failed: ' + (err.response?.data?.detail || err.message))
     } finally {
       setLoading(false)
@@ -245,11 +259,11 @@ const handleGenerateScope = async () => {
         <div className="mt-2 flex gap-4 text-sm text-gray-600">
           <span>📂 {project.domain}</span>
           <span>⚡ {project.complexity}</span>
-          <span>🕐 {project.duration}</span>
+          <span>🕐 {project.duration || 'TBD'}</span>
         </div>
       </div>
 
-      {/* Step 1: Project Info (Already created, show button to proceed) */}
+      {/* Step 1: Project Info */}
       {currentStep === 1 && (
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-xl font-bold mb-4">Step 1: Project Information</h2>
@@ -405,32 +419,57 @@ const handleGenerateScope = async () => {
             </div>
 
             {/* Timeline */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">📅 Timeline</h2>
-              <div className="mb-4">
-                <p className="text-lg font-semibold">
-                  Total Duration: {scope.timeline?.total_duration_months} months
-                </p>
+            {scope.timeline && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-bold mb-4">📅 Timeline</h2>
+                <div className="mb-4">
+                  <p className="text-lg font-semibold">
+                    Total Duration: {scope.timeline.total_duration_months} months
+                  </p>
+                </div>
+                
+                <div className="space-y-3">
+                  {scope.timeline.phases?.map((phase, idx) => (
+                    <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
+                      <h3 className="font-semibold">{phase.phase_name}</h3>
+                      <p className="text-sm text-gray-600">
+                        {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
+                      </p>
+                      <p className="text-sm mt-1">
+                        <strong>Milestones:</strong> {phase.milestones?.join(', ')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              
-              <div className="space-y-3">
-                {scope.timeline?.phases?.map((phase, idx) => (
-                  <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2">
-                    <h3 className="font-semibold">{phase.phase_name}</h3>
-                    <p className="text-sm text-gray-600">
-                      {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
-                    </p>
-                    <p className="text-sm mt-1">
-                      <strong>Milestones:</strong> {phase.milestones?.join(', ')}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            )}
 
-            {/* Resources & Cost */}
+            {/* Resources & Cost - FIXED! */}
             <div className="bg-white rounded-lg shadow p-6">
               <h2 className="text-xl font-bold mb-4">👥 Resources & Costs</h2>
+              
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-blue-50 p-4 rounded-lg text-center">
+                  <p className="text-2xl font-bold text-blue-600">
+                    {scope.resources?.length || 0}
+                  </p>
+                  <p className="text-sm text-gray-600">Roles</p>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg text-center">
+                  <p className="text-2xl font-bold text-green-600">
+                    {scope.timeline?.total_duration_months || 0}
+                  </p>
+                  <p className="text-sm text-gray-600">Months</p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg text-center">
+                  <p className="text-2xl font-bold text-purple-600">
+                    ${scope.cost_breakdown?.total_cost?.toLocaleString() || 0}
+                  </p>
+                  <p className="text-sm text-gray-600">Total Cost</p>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -470,27 +509,29 @@ const handleGenerateScope = async () => {
             </div>
 
             {/* Activities */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-bold mb-4">📝 Key Activities</h2>
-              <div className="space-y-2">
-                {scope.activities?.slice(0, 10).map((activity, idx) => (
-                  <div key={idx} className="flex items-start gap-2 p-2 hover:bg-gray-50 rounded">
-                    <span className="bg-blue-100 text-blue-600 rounded px-2 py-1 text-xs font-bold">
-                      {activity.effort_days}d
-                    </span>
-                    <div className="flex-1">
-                      <p className="font-medium">{activity.name}</p>
-                      <p className="text-sm text-gray-600">{activity.phase}</p>
+            {scope.activities && scope.activities.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-bold mb-4">📝 Key Activities</h2>
+                <div className="space-y-2">
+                  {scope.activities.slice(0, 10).map((activity, idx) => (
+                    <div key={idx} className="flex items-start gap-2 p-2 hover:bg-gray-50 rounded">
+                      <span className="bg-blue-100 text-blue-600 rounded px-2 py-1 text-xs font-bold">
+                        {activity.effort_days}d
+                      </span>
+                      <div className="flex-1">
+                        <p className="font-medium">{activity.name}</p>
+                        <p className="text-sm text-gray-600">{activity.phase}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {scope.activities?.length > 10 && (
-                  <p className="text-sm text-gray-500 text-center py-2">
-                    + {scope.activities.length - 10} more activities
-                  </p>
-                )}
+                  ))}
+                  {scope.activities.length > 10 && (
+                    <p className="text-sm text-gray-500 text-center py-2">
+                      + {scope.activities.length - 10} more activities
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Export Buttons */}
             {currentStep >= 3 && (
@@ -541,9 +582,10 @@ const handleGenerateScope = async () => {
                     <p className="mb-2">Ask me to refine the scope!</p>
                     <p className="text-sm">Examples:</p>
                     <ul className="text-xs space-y-1 mt-2">
-                      <li>"Make the timeline shorter"</li>
-                      <li>"Add more security features"</li>
-                      <li>"Increase testing activities"</li>
+                      <li>"Make it 10% cheaper"</li>
+                      <li>"Add 2 frontend developers"</li>
+                      <li>"Make timeline shorter"</li>
+                      <li>"Add security testing"</li>
                     </ul>
                   </div>
                 ) : (
@@ -560,7 +602,7 @@ const handleGenerateScope = async () => {
                         {msg.role === 'user' ? 'You' : 'AI Assistant'}
                       </p>
                       <p className="text-sm">{msg.message}</p>
-                      {msg.changes && (
+                      {msg.changes && msg.changes.length > 0 && (
                         <div className="mt-2 text-xs text-gray-600">
                           <strong>Changes:</strong>
                           <ul className="list-disc list-inside">
@@ -593,6 +635,15 @@ const handleGenerateScope = async () => {
                   Send
                 </button>
               </div>
+
+              {currentStep === 3 && (
+                <button
+                  onClick={() => setCurrentStep(4)}
+                  className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded font-medium"
+                >
+                  Proceed to Refinement →
+                </button>
+              )}
             </div>
           </div>
         </div>

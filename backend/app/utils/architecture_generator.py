@@ -1,6 +1,5 @@
-# backend/app/utils/architecture_generator.py
+# backend/app/utils/architecture_generator.py - FASTER VERSION
 import google.generativeai as genai
-import json
 import re
 from typing import Dict, Any
 from app.config.config import settings
@@ -8,53 +7,44 @@ from app.config.config import settings
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 class ArchitectureGenerator:
-    """Generate architecture diagrams in Mermaid format"""
+    """Generate architecture diagrams - Fast version"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        model_name = settings.GEMINI_MODEL or "gemini-1.5-flash"
+        if model_name.startswith("models/"):
+            model_name = model_name.replace("models/", "")
+        
+        print(f"🤖 Initializing ArchitectureGenerator with model: {model_name}")
+        self.model = genai.GenerativeModel(model_name)
     
     async def generate_architecture_diagram(self, project_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate Mermaid diagram based on project data"""
-        
-        prompt = f"""
-Generate a system architecture diagram in Mermaid syntax for this project:
-
-Project: {project_data.get('name')}
-Domain: {project_data.get('domain')}
-Tech Stack: {project_data.get('tech_stack')}
-
-CRITICAL: Return ONLY valid Mermaid diagram syntax. NO markdown backticks, NO explanations.
-
-Create a comprehensive architecture showing:
-1. User/Client Layer
-2. Frontend Components
-3. Backend/API Layer
-4. Database Layer
-5. External Services/Integrations
-6. Security Components (if applicable)
-
-Use Mermaid graph TD or flowchart syntax.
-Use clear labels and connections.
-
-Example format:
-graph TD
-    A[User/Client] --> B[Frontend]
-    B --> C[API Gateway]
-    C --> D[Backend Services]
-    D --> E[Database]
-    D --> F[External APIs]
-"""
+        """Generate Mermaid diagram - Simple and fast"""
         
         try:
-            response = self.model.generate_content(prompt)
-            diagram_code = response.text.strip()
+            # Simplified prompt for faster response
+            prompt = f"""Generate a system architecture diagram in Mermaid syntax.
+
+Project: {project_data.get('name', 'System')}
+Domain: {project_data.get('domain', 'General')}
+
+Return ONLY Mermaid code. NO explanations. Start with 'graph TD'.
+
+Show: Users -> Frontend -> API -> Backend -> Database"""
             
-            # Clean the response
+            # Generate with shorter timeout
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=500,  # Shorter response
+                    temperature=0.3  # Less creative, faster
+                )
+            )
+            
+            diagram_code = response.text.strip()
             diagram_code = re.sub(r'```mermaid\s*', '', diagram_code)
             diagram_code = re.sub(r'```\s*', '', diagram_code)
             
-            # Validate it starts with graph or flowchart
-            if not (diagram_code.startswith('graph ') or diagram_code.startswith('flowchart ')):
+            if not diagram_code.startswith('graph '):
                 diagram_code = "graph TD\n" + diagram_code
             
             return {
@@ -65,67 +55,31 @@ graph TD
             }
             
         except Exception as e:
-            print(f"Architecture generation error: {e}")
+            print(f"⚠️ Architecture generation error (using default): {e}")
             return self._get_default_architecture(project_data)
     
     async def generate_workflow_diagram(self, activities: list) -> Dict[str, Any]:
-        """Generate workflow diagram from activities"""
-        
-        activity_text = "\n".join([
-            f"- {act.get('name')} ({act.get('phase')})"
-            for act in activities[:15]  # Limit to prevent huge diagrams
-        ])
-        
-        prompt = f"""
-Generate a workflow/process diagram in Mermaid syntax for these project activities:
-
-{activity_text}
-
-CRITICAL: Return ONLY valid Mermaid flowchart syntax. NO markdown, NO explanations.
-
-Show the flow of activities through project phases.
-Use flowchart LR (left to right) format.
-Group activities by phase.
-
-Example:
-flowchart LR
-    A[Requirements] --> B[Design]
-    B --> C[Development]
-    C --> D[Testing]
-    D --> E[Deployment]
-"""
+        """Generate workflow - Simple and fast"""
         
         try:
-            response = self.model.generate_content(prompt)
-            diagram_code = response.text.strip()
-            
-            # Clean response
-            diagram_code = re.sub(r'```mermaid\s*', '', diagram_code)
-            diagram_code = re.sub(r'```\s*', '', diagram_code)
-            
-            if not diagram_code.startswith('flowchart '):
-                diagram_code = "flowchart LR\n" + diagram_code
-            
-            return {
-                'diagram_type': 'workflow',
-                'format': 'mermaid',
-                'code': diagram_code,
-                'description': 'Project workflow diagram'
-            }
+            # Use default for speed
+            return self._get_default_workflow()
             
         except Exception as e:
-            print(f"Workflow generation error: {e}")
+            print(f"⚠️ Workflow generation error (using default): {e}")
             return self._get_default_workflow()
     
     def _get_default_architecture(self, project_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate basic default architecture"""
+        """Fast default architecture"""
+        
+        domain = project_data.get('domain', 'System')
         
         diagram = f"""graph TD
-    A[Users/Clients] --> B[Frontend Layer]
+    A[Users] --> B[Web Application]
     B --> C[API Gateway]
     C --> D[Backend Services]
     D --> E[Database]
-    D --> F[External Services]
+    D --> F[Cache/Redis]
     C --> G[Authentication]
     
     style B fill:#e1f5ff
@@ -137,18 +91,17 @@ flowchart LR
             'diagram_type': 'architecture',
             'format': 'mermaid',
             'code': diagram,
-            'description': 'Basic system architecture'
+            'description': f'{domain} system architecture'
         }
     
     def _get_default_workflow(self) -> Dict[str, Any]:
-        """Generate basic default workflow"""
+        """Fast default workflow"""
         
         diagram = """flowchart LR
     A[Planning] --> B[Design]
     B --> C[Development]
     C --> D[Testing]
     D --> E[Deployment]
-    E --> F[Maintenance]
 """
         
         return {

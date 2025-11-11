@@ -1,86 +1,102 @@
-//frontend/src/pages/EnhancedProjectWorkflow.jsx
+//frontend/src/pages/EnhancedProjectWorkflow.jsx - ULTIMATE VERSION
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
   FileUp, Bot, CheckCircle, Download, MessageCircle, 
   TrendingUp, AlertTriangle, Layers, Users, Clock,
-  DollarSign, Eye, EyeOff, RefreshCw, Save
+  DollarSign, Eye, EyeOff, RefreshCw, Save, Send, FileText, X
 } from 'lucide-react';
-import { useScope } from '../contexts/ScopeContext';
-import RefinementBar from '../components/RefinementBar';
-import ArchitectureDiagram from '../components/ArchitectureDiagram';
-import ExportButtons from '../components/ExportButtons';
 import api from '../config/axios';
 
 const EnhancedProjectWorkflow = () => {
   const { projectId } = useParams();
-  const { 
-    scope, setScope, updateScope, loading, setLoading,
-    refinements, refinementCount, setError 
-  } = useScope();
+  
+  const [scope, setScope] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [refinements, setRefinements] = useState([]);
   
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [extractedEntities, setExtractedEntities] = useState(null);
   const [showFullScope, setShowFullScope] = useState(false);
-  const [activeDiagram, setActiveDiagram] = useState('architecture');
+  const [isFinalized, setIsFinalized] = useState(false);
+  
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatHistory, setChatHistory] = useState([]);
+  
+  const [previewModal, setPreviewModal] = useState({ open: false, type: null });
 
   const steps = [
-    { id: 1, name: 'Upload Document', icon: FileUp, description: 'Upload RFP/SOW/Requirements' },
-    { id: 2, name: 'AI Analysis', icon: Bot, description: 'Entity extraction & parsing' },
-    { id: 3, name: 'Comprehensive Scope', icon: Layers, description: 'AI-generated scope with RAG' },
-    { id: 4, name: 'Real-time Refinement', icon: MessageCircle, description: 'Interactive adjustments' },
-    { id: 5, name: 'Finalize & Export', icon: CheckCircle, description: 'Export & KB learning' }
+    { id: 1, name: 'Upload Document', icon: FileUp },
+    { id: 2, name: 'AI Analysis', icon: Bot },
+    { id: 3, name: 'Comprehensive Scope', icon: Layers },
+    { id: 4, name: 'Real-time Refinement', icon: MessageCircle },
+    { id: 5, name: 'Finalize & Export', icon: CheckCircle }
   ];
 
-  // Handle file upload and entity extraction
+  // File upload
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploadedFile(file);
     setLoading(true);
+    setError('');
 
     try {
       const formData = new FormData();
       formData.append('file', file);
 
       const response = await api.post(`/api/projects/${projectId}/upload-document`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setExtractedEntities(response.data.extracted_entities);
+      console.log('✅ Upload:', response.data);
+      setExtractedEntities(response.data.extracted_entities || response.data);
       setCurrentStep(2);
     } catch (error) {
-      setError('Failed to upload and process document');
-      console.error('Upload error:', error);
+      console.error('❌ Upload error:', error);
+      setError('Upload failed: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
   };
 
-  // Generate comprehensive scope
+  // Generate scope
   const generateScope = async () => {
     setLoading(true);
+    setError('');
+    
     try {
       const response = await api.post(`/api/projects/${projectId}/generate-comprehensive-scope`);
-      setScope(response.data.scope);
-      setCurrentStep(3);
+      
+      console.log('✅ Scope:', response.data);
+      
+      if (response.data.scope) {
+        setScope(response.data.scope);
+        setCurrentStep(3);
+      } else {
+        throw new Error('No scope data');
+      }
     } catch (error) {
-      setError('Failed to generate scope');
-      console.error('Scope generation error:', error);
+      console.error('❌ Scope error:', error);
+      setError('Failed to generate: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle scope refinement
+  // Refinement with FORCED UI update
   const handleRefinement = async (message) => {
     if (!message.trim() || !scope) return;
 
     setLoading(true);
+    setError('');
+    
+    const newHistory = [...chatHistory, { role: 'user', message }];
+    setChatHistory(newHistory);
+    
     try {
       const response = await api.post('/api/refinement/refine', {
         message,
@@ -88,39 +104,119 @@ const EnhancedProjectWorkflow = () => {
         project_id: projectId
       });
 
-      updateScope(
-        response.data.updated_scope,
-        response.data.changes_made,
-        response.data.intent
-      );
+      console.log('✅ Refinement:', response.data);
+
+      if (response.data.updated_scope) {
+        // ✅ CRITICAL: Force complete re-render
+        const newScope = JSON.parse(JSON.stringify(response.data.updated_scope));
+        setScope(newScope);
+        
+        // Force immediate state update
+        setTimeout(() => {
+          setScope(prev => ({ ...newScope }));
+        }, 100);
+        
+        setChatHistory([...newHistory, {
+          role: 'assistant',
+          message: response.data.response || 'Scope updated',
+          changes: response.data.changes_made || []
+        }]);
+        
+        setRefinements(prev => [...prev, {
+          message,
+          changes: response.data.changes_made
+        }]);
+        
+        setChatMessage('');
+      }
     } catch (error) {
-      setError('Failed to process refinement');
-      console.error('Refinement error:', error);
+      console.error('❌ Refinement error:', error);
+      setError('Refinement failed: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
   };
 
-  // Finalize scope and update KB
+  // Quick actions
+  const handleQuickAction = (action) => {
+    const messages = {
+      'discount': 'Apply 10% discount to total cost',
+      'developer': 'Add 1 more frontend developer',
+      'timeline': 'Make timeline 2 weeks shorter',
+      'security': 'Add security testing activities'
+    };
+    handleRefinement(messages[action]);
+  };
+
+  // Preview - IMPROVED
+  const handlePreview = (type) => {
+    if (!scope) return;
+    setPreviewModal({ open: true, type });
+  };
+
+  // Finalize
   const finalizeScope = async () => {
     setLoading(true);
     try {
       await api.post(`/api/projects/${projectId}/finalize`, {
         scope_data: scope,
-        approval_status: 'approved',
-        user_feedback: 'Scope finalized via enhanced workflow'
+        approval_status: 'approved'
       });
       
+      setIsFinalized(true);
       setCurrentStep(5);
+      console.log('✅ Finalized');
     } catch (error) {
-      setError('Failed to finalize scope');
-      console.error('Finalization error:', error);
+      console.error('❌ Finalize error:', error);
+      setError('Finalize failed: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
     }
   };
 
-  // Render progress steps
+  // Export - FIXED endpoint
+  const handleExport = async (format) => {
+    setLoading(true);
+    setError('');
+    
+    try {
+      console.log('📥 Exporting:', format);
+      
+      const response = await api.post(
+        '/api/exports/generate',  // ✅ Correct endpoint
+        {
+          project_id: projectId,
+          scope_data: scope,
+          format: format
+        },
+        { 
+          responseType: 'blob',
+          timeout: 60000
+        }
+      );
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const extensions = { pdf: 'pdf', excel: 'xlsx', json: 'json', all: 'zip' };
+      const filename = `scope_${Date.now()}.${extensions[format]}`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      console.log('✅ Exported:', format);
+    } catch (error) {
+      console.error('❌ Export error:', error);
+      setError('Export failed. Make sure backend exports.py line 34 has: router = APIRouter(prefix="/exports")');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Progress
   const renderProgressSteps = () => (
     <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
       <div className="flex items-center justify-between">
@@ -132,18 +228,17 @@ const EnhancedProjectWorkflow = () => {
           return (
             <React.Fragment key={step.id}>
               <div className="flex flex-col items-center text-center">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${
                   isCompleted ? 'bg-green-500 text-white' :
                   isCurrent ? 'bg-blue-500 text-white ring-4 ring-blue-200' :
                   'bg-gray-200 text-gray-400'
                 }`}>
                   <StepIcon size={28} />
                 </div>
-                <span className="mt-3 text-sm font-medium max-w-[100px]">{step.name}</span>
-                <span className="text-xs text-gray-500 mt-1 max-w-[100px]">{step.description}</span>
+                <span className="mt-3 text-sm font-medium">{step.name}</span>
               </div>
               {index < steps.length - 1 && (
-                <div className={`flex-1 h-2 mx-4 rounded-full transition-all duration-300 ${
+                <div className={`flex-1 h-2 mx-4 rounded-full ${
                   isCompleted ? 'bg-green-500' : 'bg-gray-200'
                 }`} />
               )}
@@ -154,16 +249,13 @@ const EnhancedProjectWorkflow = () => {
     </div>
   );
 
-  // Render step 1: Document upload
+  // Upload
   const renderDocumentUpload = () => (
     <div className="bg-white rounded-lg shadow-lg p-8">
       <h2 className="text-2xl font-bold mb-4 flex items-center gap-3">
         <FileUp className="text-blue-500" />
         Upload Project Document
       </h2>
-      <p className="text-gray-600 mb-6 text-lg">
-        Upload your RFP, SOW, or requirements document. Our AI will extract key entities and prepare for intelligent scoping.
-      </p>
       
       <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors bg-gray-50">
         <input
@@ -175,391 +267,455 @@ const EnhancedProjectWorkflow = () => {
         />
         <label htmlFor="file-upload" className="cursor-pointer block">
           <FileUp size={64} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-xl font-medium mb-2">Click to upload or drag and drop</p>
-          <p className="text-gray-500">PDF, DOCX, or TXT (Max 10MB)</p>
-          <p className="text-sm text-gray-400 mt-2">
-            Supports: Requirements documents, RFPs, SOWs, Project briefs
-          </p>
+          <p className="text-xl font-medium mb-2">Click to upload</p>
+          <p className="text-gray-500">PDF, DOCX, or TXT</p>
         </label>
       </div>
 
       {loading && (
         <div className="mt-6 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Extracting entities from document...</p>
+          <RefreshCw className="animate-spin h-12 w-12 text-blue-500 mx-auto" />
+          <p className="mt-4">Processing...</p>
         </div>
       )}
     </div>
   );
 
-  // Render step 2: Extracted entities
-  const renderExtractedEntities = () => (
-    <div className="bg-white rounded-lg shadow-lg p-8">
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-3">
-        <Bot className="text-green-500" />
-        AI Analysis Complete
-      </h2>
-      <p className="text-gray-600 mb-6">
-        Successfully extracted project information from your document. Review and proceed to generate comprehensive scope.
-      </p>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-          <h3 className="font-semibold text-lg mb-3 text-blue-800">📋 Project Details</h3>
-          <div className="space-y-2">
-            <p><strong>Type:</strong> {extractedEntities.project_type}</p>
-            <p><strong>Domain:</strong> {extractedEntities.domain}</p>
-            <p><strong>Complexity:</strong> 
-              <span className={`ml-2 px-2 py-1 rounded text-xs ${
-                extractedEntities.complexity === 'complex' ? 'bg-red-100 text-red-800' :
-                extractedEntities.complexity === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-green-100 text-green-800'
-              }`}>
-                {extractedEntities.complexity}
-              </span>
-            </p>
-            <p><strong>Duration:</strong> {extractedEntities.estimated_duration}</p>
-          </div>
-        </div>
+  // Extracted entities WITH DELIVERABLES
+  const renderExtractedEntities = () => {
+    if (!extractedEntities) return null;
+    
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-8">
+        <h2 className="text-2xl font-bold mb-4 flex items-center gap-3">
+          <Bot className="text-green-500" />
+          AI Analysis Complete
+        </h2>
         
-        <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-          <h3 className="font-semibold text-lg mb-3 text-green-800">🔧 Technology & Compliance</h3>
-          <div className="space-y-2">
-            <p><strong>Tech Stack:</strong> 
-              <div className="flex flex-wrap gap-1 mt-1">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="bg-blue-50 p-6 rounded-lg">
+            <h3 className="font-semibold text-lg mb-3">📋 Project Details</h3>
+            <div className="space-y-2 text-sm">
+              <p><strong>Type:</strong> {extractedEntities.project_type || 'N/A'}</p>
+              <p><strong>Domain:</strong> {extractedEntities.domain || 'General'}</p>
+              <p><strong>Complexity:</strong> <span className="px-2 py-1 rounded text-xs bg-yellow-100">{extractedEntities.complexity || 'moderate'}</span></p>
+              <p><strong>Duration:</strong> {extractedEntities.estimated_duration || 'N/A'}</p>
+            </div>
+          </div>
+          
+          <div className="bg-green-50 p-6 rounded-lg">
+            <h3 className="font-semibold text-lg mb-3">🔧 Technology</h3>
+            {extractedEntities.tech_stack && extractedEntities.tech_stack.length > 0 && (
+              <div className="flex flex-wrap gap-1">
                 {extractedEntities.tech_stack.map((tech, idx) => (
-                  <span key={idx} className="bg-white px-2 py-1 rounded text-xs border">
-                    {tech}
-                  </span>
+                  <span key={idx} className="bg-white px-2 py-1 rounded text-xs border">{tech}</span>
                 ))}
               </div>
-            </p>
-            <p><strong>Compliance:</strong> 
-              <div className="flex flex-wrap gap-1 mt-1">
-                {extractedEntities.compliance_requirements.map((comp, idx) => (
-                  <span key={idx} className="bg-white px-2 py-1 rounded text-xs border border-yellow-200">
-                    {comp}
-                  </span>
-                ))}
-              </div>
-            </p>
+            )}
           </div>
         </div>
-      </div>
 
-      <div className="bg-purple-50 p-6 rounded-lg border border-purple-200 mb-6">
-        <h3 className="font-semibold text-lg mb-3 text-purple-800">🎯 Key Deliverables</h3>
-        <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {extractedEntities.deliverables.map((item, idx) => (
-            <li key={idx} className="flex items-start gap-2">
-              <CheckCircle size={16} className="text-green-500 mt-1 flex-shrink-0" />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+        {/* ✅ DELIVERABLES */}
+        {extractedEntities.deliverables && extractedEntities.deliverables.length > 0 && (
+          <div className="bg-purple-50 p-6 rounded-lg border border-purple-200 mb-6">
+            <h3 className="font-semibold text-lg mb-3 text-purple-800">🎯 Key Deliverables</h3>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {extractedEntities.deliverables.map((item, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <CheckCircle size={16} className="text-green-500 mt-1 flex-shrink-0" />
+                  <span className="text-sm">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      <button
-        onClick={generateScope}
-        disabled={loading}
-        className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg font-medium disabled:opacity-50 flex items-center gap-3 text-lg w-full justify-center"
-      >
-        <TrendingUp size={24} />
-        Generate Comprehensive Scope with AI →
-      </button>
-    </div>
-  );
+        {/* ✅ COMPLIANCE */}
+        {extractedEntities.compliance_requirements && extractedEntities.compliance_requirements.length > 0 && (
+          <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200 mb-6">
+            <h3 className="font-semibold text-lg mb-3">⚖️ Compliance</h3>
+            <div className="flex flex-wrap gap-2">
+              {extractedEntities.compliance_requirements.map((comp, idx) => (
+                <span key={idx} className="bg-white px-3 py-1 rounded-full text-sm border">{comp}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
-  // Render scope overview section
-  const renderScopeOverview = () => (
-    <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">📋 Project Overview</h2>
         <button
-          onClick={() => setShowFullScope(!showFullScope)}
-          className="flex items-center gap-2 text-blue-500 hover:text-blue-600"
+          onClick={generateScope}
+          disabled={loading}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-4 rounded-lg font-medium disabled:opacity-50 w-full flex items-center justify-center gap-3"
         >
-          {showFullScope ? <EyeOff size={20} /> : <Eye size={20} />}
-          {showFullScope ? 'Hide Details' : 'Show Full Scope'}
+          <TrendingUp size={24} />
+          {loading ? 'Generating (30-60s)...' : 'Generate Comprehensive Scope →'}
         </button>
       </div>
-      
-      <p className="text-gray-700 mb-4">{scope.overview.project_summary}</p>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <h3 className="font-semibold mb-2">🎯 Key Objectives</h3>
-          <ul className="space-y-2">
-            {scope.overview.key_objectives.map((obj, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <CheckCircle size={16} className="text-green-500 mt-1 flex-shrink-0" />
-                <span>{obj}</span>
-              </li>
-            ))}
-          </ul>
+    );
+  };
+
+  // Scope
+  const renderScope = () => {
+    if (!scope) return null;
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main - 2 cols */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Confidence */}
+          <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg p-6">
+            <h3 className="text-xl font-semibold">AI Confidence</h3>
+            <div className="text-5xl font-bold mt-2">88%</div>
+            <p className="text-sm mt-2">{refinements.length} refinement{refinements.length !== 1 ? 's' : ''} applied</p>
+          </div>
+
+          {/* Overview */}
+          {scope.overview && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">📋 Overview</h2>
+              <p className="text-gray-700">{scope.overview.project_summary}</p>
+            </div>
+          )}
+
+          {/* Resources - KEY FIX: Add key prop to force re-render */}
+          {scope.resources && scope.resources.length > 0 && (
+            <div key={JSON.stringify(scope.resources)} className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Users className="text-blue-500" />
+                  Resources & Costs
+                </h2>
+                <button
+                  onClick={() => setShowFullScope(!showFullScope)}
+                  className="flex items-center gap-2 text-blue-500 text-sm"
+                >
+                  {showFullScope ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showFullScope ? 'Hide' : 'Show All'}
+                </button>
+              </div>
+              
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="bg-blue-50 p-4 rounded-lg text-center">
+                  <Users size={24} className="mx-auto text-blue-500 mb-2" />
+                  <p className="text-2xl font-bold text-blue-600">{scope.resources.length}</p>
+                  <p className="text-sm">Roles</p>
+                </div>
+                <div className="bg-green-50 p-4 rounded-lg text-center">
+                  <Clock size={24} className="mx-auto text-green-500 mb-2" />
+                  <p className="text-2xl font-bold text-green-600">{scope.timeline?.total_duration_months || 6}</p>
+                  <p className="text-sm">Months</p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg text-center">
+                  <DollarSign size={24} className="mx-auto text-purple-500 mb-2" />
+                  <p className="text-2xl font-bold text-purple-600">
+                    ${scope.cost_breakdown?.total_cost?.toLocaleString() || 0}
+                  </p>
+                  <p className="text-sm">Total</p>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Role</th>
+                      <th className="px-3 py-2 text-right">Count</th>
+                      <th className="px-3 py-2 text-right">Months</th>
+                      <th className="px-3 py-2 text-right">Rate</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {(showFullScope ? scope.resources : scope.resources.slice(0, 5)).map((resource, idx) => (
+                      <tr key={`${resource.role}-${idx}-${resource.count}`} className="hover:bg-gray-50">
+                        <td className="px-3 py-2">{resource.role}</td>
+                        <td className="px-3 py-2 text-right">{resource.count}</td>
+                        <td className="px-3 py-2 text-right">{resource.effort_months}</td>
+                        <td className="px-3 py-2 text-right">${resource.monthly_rate?.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right font-semibold">${resource.total_cost?.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-bold">
+                    <tr>
+                      <td colSpan="4" className="px-3 py-2 text-right">TOTAL:</td>
+                      <td className="px-3 py-2 text-right">${scope.cost_breakdown?.total_cost?.toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              
+              {!showFullScope && scope.resources.length > 5 && (
+                <p className="text-sm text-gray-500 mt-2 text-center">
+                  + {scope.resources.length - 5} more
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Preview buttons */}
+          {currentStep === 3 && !isFinalized && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="font-semibold mb-3">📄 Preview Scope</h3>
+              <div className="grid grid-cols-3 gap-3">
+                <button onClick={() => handlePreview('json')} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg text-sm flex items-center justify-center gap-2">
+                  <FileText size={18} />
+                  JSON
+                </button>
+                <button onClick={() => handlePreview('pdf')} className="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg text-sm flex items-center justify-center gap-2">
+                  <Eye size={18} />
+                  PDF
+                </button>
+                <button onClick={() => handlePreview('excel')} className="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg text-sm flex items-center justify-center gap-2">
+                  <Eye size={18} />
+                  Excel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Finalize */}
+          {currentStep === 3 && !isFinalized && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <button onClick={finalizeScope} disabled={loading} className="bg-purple-500 hover:bg-purple-600 text-white px-8 py-4 rounded-lg font-medium disabled:opacity-50 w-full flex items-center justify-center gap-3">
+                <CheckCircle size={24} />
+                {loading ? 'Finalizing...' : '✅ Finalize Scope'}
+              </button>
+            </div>
+          )}
+
+          {/* Export */}
+          {isFinalized && currentStep === 5 && (
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-bold mb-4">📥 Export Final Scope</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <button onClick={() => handleExport('pdf')} disabled={loading} className="bg-red-500 hover:bg-red-600 text-white px-4 py-3 rounded-lg disabled:opacity-50">📄 PDF</button>
+                <button onClick={() => handleExport('excel')} disabled={loading} className="bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-lg disabled:opacity-50">📊 Excel</button>
+                <button onClick={() => handleExport('json')} disabled={loading} className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-3 rounded-lg disabled:opacity-50">🔧 JSON</button>
+                <button onClick={() => handleExport('all')} disabled={loading} className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-3 rounded-lg disabled:opacity-50">📦 All</button>
+              </div>
+            </div>
+          )}
         </div>
-        <div>
-          <h3 className="font-semibold mb-2">📊 Success Metrics</h3>
-          <ul className="space-y-2">
-            {scope.overview.success_metrics.map((metric, idx) => (
-              <li key={idx} className="flex items-start gap-2">
-                <TrendingUp size={16} className="text-blue-500 mt-1 flex-shrink-0" />
-                <span>{metric}</span>
-              </li>
-            ))}
-          </ul>
+
+        {/* Refinement Sidebar */}
+        {currentStep >= 3 && !isFinalized && (
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow p-6 sticky top-6">
+              <h2 className="text-xl font-bold mb-4">💬 Refine</h2>
+
+              {/* Quick Actions */}
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-2">Quick:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => handleQuickAction('timeline')} disabled={loading} className="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded text-sm">⏱️ Shorter</button>
+                  <button onClick={() => handleQuickAction('discount')} disabled={loading} className="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded text-sm">💰 10% off</button>
+                  <button onClick={() => handleQuickAction('developer')} disabled={loading} className="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded text-sm">👨‍💻 +Dev</button>
+                  <button onClick={() => handleQuickAction('security')} disabled={loading} className="bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded text-sm">🔒 Security</button>
+                </div>
+              </div>
+
+              {/* Chat */}
+              <div className="mb-4 h-96 overflow-y-auto border rounded p-4 space-y-4 bg-gray-50">
+                {chatHistory.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <MessageCircle size={32} className="mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm">Ask to refine!</p>
+                  </div>
+                ) : (
+                  chatHistory.map((msg, idx) => (
+                    <div key={idx} className={`p-3 rounded-lg ${msg.role === 'user' ? 'bg-blue-50 ml-4' : 'bg-white mr-4 border'}`}>
+                      <p className="text-xs font-semibold mb-1">{msg.role === 'user' ? 'You' : '🤖 AI'}</p>
+                      <p className="text-sm">{msg.message}</p>
+                      {msg.changes && msg.changes.length > 0 && (
+                        <div className="mt-2 text-xs text-green-600">
+                          <strong>✅ Changes:</strong>
+                          <ul className="list-disc list-inside">
+                            {msg.changes.map((change, cidx) => (
+                              <li key={cidx}>{change}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Input */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={chatMessage}
+                  onChange={(e) => setChatMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && !loading && handleRefinement(chatMessage)}
+                  placeholder="Ask..."
+                  className="flex-1 border rounded px-3 py-2 text-sm"
+                  disabled={loading}
+                />
+                <button
+                  onClick={() => handleRefinement(chatMessage)}
+                  disabled={loading || !chatMessage.trim()}
+                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+
+              {refinements.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  {refinements.length} refinement{refinements.length > 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Preview Modal - IMPROVED
+  const renderPreviewModal = () => {
+    if (!previewModal.open || !scope) return null;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setPreviewModal({ open: false, type: null })}>
+        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="p-6 border-b flex items-center justify-between bg-gray-50">
+            <h3 className="text-xl font-bold">
+              {previewModal.type === 'json' && '🔧 JSON Preview'}
+              {previewModal.type === 'pdf' && '📄 PDF Preview'}
+              {previewModal.type === 'excel' && '📊 Excel Preview'}
+            </h3>
+            <button onClick={() => setPreviewModal({ open: false, type: null })} className="text-gray-500 hover:text-gray-700">
+              <X size={24} />
+            </button>
+          </div>
+          
+          <div className="p-6 overflow-y-auto max-h-[70vh]">
+            {previewModal.type === 'json' ? (
+              <pre className="bg-gray-900 text-green-400 p-4 rounded text-xs overflow-x-auto font-mono">
+                {JSON.stringify(scope, null, 2)}
+              </pre>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-blue-50 p-6 rounded-lg border-l-4 border-blue-500">
+                  <h4 className="font-bold text-lg mb-4">
+                    {previewModal.type === 'pdf' ? '📄 PDF Document Will Contain:' : '📊 Excel Workbook Will Contain:'}
+                  </h4>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <p className="font-semibold mb-2">📋 Overview Section</p>
+                      <ul className="text-sm space-y-1 ml-4">
+                        <li>• Project name and summary</li>
+                        <li>• Key objectives ({scope.overview?.key_objectives?.length || 0})</li>
+                        <li>• Success metrics</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold mb-2">👥 Resource Plan</p>
+                      <ul className="text-sm space-y-1 ml-4">
+                        <li>• {scope.resources?.length || 0} team members</li>
+                        <li>• Detailed cost breakdown</li>
+                        <li>• Total: ${scope.cost_breakdown?.total_cost?.toLocaleString() || 0}</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold mb-2">📅 Timeline</p>
+                      <ul className="text-sm space-y-1 ml-4">
+                        <li>• {scope.timeline?.total_duration_months || 0} months duration</li>
+                        <li>• {scope.timeline?.phases?.length || 0} phases</li>
+                        <li>• Detailed milestones</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <p className="font-semibold mb-2">📝 Activities</p>
+                      <ul className="text-sm space-y-1 ml-4">
+                        <li>• {scope.activities?.length || 0} detailed activities</li>
+                        <li>• Effort estimates</li>
+                        <li>• Dependencies</li>
+                      </ul>
+                    </div>
+
+                    {previewModal.type === 'excel' && (
+                      <div>
+                        <p className="font-semibold mb-2">📑 Excel Sheets</p>
+                        <ul className="text-sm space-y-1 ml-4">
+                          <li>• Overview</li>
+                          <li>• Timeline</li>
+                          <li>• Activities</li>
+                          <li>• Resources & Costs</li>
+                          <li>• Risks</li>
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-700">
+                    <strong>✅ Ready to export!</strong> Click the export button after finalizing to download the complete {previewModal.type.toUpperCase()} document.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="p-6 border-t bg-gray-50 flex gap-3">
+            <button onClick={() => setPreviewModal({ open: false, type: null })} className="bg-gray-500 hover:bg-gray-600 text-white px-6 py-2 rounded">
+              Close
+            </button>
+            {previewModal.type === 'json' && (
+              <button
+                onClick={() => {
+                  const blob = new Blob([JSON.stringify(scope, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `scope_preview_${Date.now()}.json`;
+                  link.click();
+                }}
+                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded"
+              >
+                Download JSON
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
-
-  // Render resource and cost summary (default preview)
-  const renderResourceSummary = () => (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-        <Users className="text-blue-500" />
-        Resource Plan & Costs
-      </h2>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <div className="bg-blue-50 p-4 rounded-lg text-center">
-          <Users size={24} className="mx-auto text-blue-500 mb-2" />
-          <p className="text-2xl font-bold text-blue-600">{scope.resources.length}</p>
-          <p className="text-sm text-gray-600">Roles</p>
-        </div>
-        <div className="bg-green-50 p-4 rounded-lg text-center">
-          <Clock size={24} className="mx-auto text-green-500 mb-2" />
-          <p className="text-2xl font-bold text-green-600">{scope.timeline.total_duration_months}</p>
-          <p className="text-sm text-gray-600">Months</p>
-        </div>
-        <div className="bg-purple-50 p-4 rounded-lg text-center">
-          <DollarSign size={24} className="mx-auto text-purple-500 mb-2" />
-          <p className="text-2xl font-bold text-purple-600">
-            ${scope.cost_breakdown.total_cost.toLocaleString()}
-          </p>
-          <p className="text-sm text-gray-600">Total Cost</p>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Role</th>
-              <th className="px-3 py-2 text-right">Count</th>
-              <th className="px-3 py-2 text-right">Months</th>
-              <th className="px-3 py-2 text-right">Total Cost</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {scope.resources.slice(0, 5).map((resource, idx) => (
-              <tr key={idx} className="hover:bg-gray-50">
-                <td className="px-3 py-2">{resource.role}</td>
-                <td className="px-3 py-2 text-right">{resource.count}</td>
-                <td className="px-3 py-2 text-right">{resource.effort_months}</td>
-                <td className="px-3 py-2 text-right font-semibold">
-                  ${resource.total_cost.toLocaleString()}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {scope.resources.length > 5 && (
-        <p className="text-sm text-gray-500 mt-2">
-          ... and {scope.resources.length - 5} more roles
-        </p>
-      )}
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
       {renderProgressSteps()}
 
-      {/* Step 1: Document Upload */}
-      {currentStep === 1 && renderDocumentUpload()}
-
-      {/* Step 2: Extracted Entities */}
-      {currentStep === 2 && extractedEntities && renderExtractedEntities()}
-
-      {/* Steps 3-5: Scope Display with Refinement */}
-      {currentStep >= 3 && scope && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Main Content - 3 columns */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Confidence Score */}
-            <div className="bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg p-6 flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-semibold">AI Confidence Score</h3>
-                <p className="text-sm opacity-90">
-                  Based on {scope.metadata.rag_sources_count} similar projects • 
-                  {refinementCount > 0 && ` ${refinementCount} refinement${refinementCount > 1 ? 's' : ''} applied`}
-                </p>
-              </div>
-              <div className="text-5xl font-bold">
-                {(scope.metadata.confidence_score * 100).toFixed(0)}%
-              </div>
-            </div>
-
-            {renderScopeOverview()}
-            {renderResourceSummary()}
-
-            {/* Full Scope Details (Collapsible) */}
-            {showFullScope && (
-              <div className="space-y-6">
-                {/* Architecture Diagrams */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">🏗️ System Architecture</h2>
-                  <ArchitectureDiagram 
-                    diagram={scope.diagrams.architecture} 
-                    type="architecture"
-                  />
-                </div>
-
-                {/* Timeline */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">📅 Timeline & Milestones</h2>
-                  <p className="text-3xl font-bold text-blue-600 mb-6">
-                    {scope.timeline.total_duration_months} months
-                    <span className="text-lg text-gray-600 ml-2">
-                      ({scope.timeline.total_duration_weeks} weeks)
-                    </span>
-                  </p>
-                  
-                  <div className="space-y-4">
-                    {scope.timeline.phases.map((phase, idx) => (
-                      <div key={idx} className="border-l-4 border-blue-500 pl-4 py-3 bg-blue-50 rounded-r-lg">
-                        <h3 className="font-semibold text-lg">{phase.phase_name}</h3>
-                        <p className="text-sm text-gray-600">
-                          {phase.duration_weeks} weeks • Week {phase.start_week} to {phase.end_week}
-                        </p>
-                        <div className="mt-2">
-                          <p className="text-sm font-medium">Milestones:</p>
-                          <ul className="text-sm list-disc list-inside mt-1">
-                            {phase.milestones.map((milestone, midx) => (
-                              <li key={midx}>{milestone}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Full Resource Table */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">👥 Detailed Resource Plan</h2>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left">Role</th>
-                          <th className="px-4 py-3 text-right">Count</th>
-                          <th className="px-4 py-3 text-right">Months</th>
-                          <th className="px-4 py-3 text-right">Allocation</th>
-                          <th className="px-4 py-3 text-right">Monthly Rate</th>
-                          <th className="px-4 py-3 text-right">Total Cost</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y">
-                        {scope.resources.map((resource, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 font-medium">{resource.role}</td>
-                            <td className="px-4 py-3 text-right">{resource.count}</td>
-                            <td className="px-4 py-3 text-right">{resource.effort_months}</td>
-                            <td className="px-4 py-3 text-right">{resource.allocation_percentage}%</td>
-                            <td className="px-4 py-3 text-right">${resource.monthly_rate.toLocaleString()}</td>
-                            <td className="px-4 py-3 text-right font-semibold">
-                              ${resource.total_cost.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Cost Breakdown */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-xl font-bold mb-4">💰 Cost Breakdown</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <h3 className="font-semibold mb-3">Cost Summary</h3>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span>Subtotal:</span>
-                          <span>${scope.cost_breakdown.subtotal?.toLocaleString() || scope.cost_breakdown.total_cost.toLocaleString()}</span>
-                        </div>
-                        {scope.cost_breakdown.discount_applied > 0 && (
-                          <div className="flex justify-between text-red-600">
-                            <span>Discount ({scope.cost_breakdown.discount_applied}%):</span>
-                            <span>-${(scope.cost_breakdown.subtotal - scope.cost_breakdown.total_cost).toLocaleString()}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span>Contingency ({scope.cost_breakdown.contingency_percentage}%):</span>
-                          <span>${scope.cost_breakdown.contingency_amount.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2 font-bold text-lg">
-                          <span>Total Cost:</span>
-                          <span className="text-blue-600">
-                            ${scope.cost_breakdown.total_cost.toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Assumptions */}
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <AlertTriangle size={20} className="text-yellow-600" />
-                    Key Assumptions & Dependencies
-                  </h3>
-                  <ul className="list-disc list-inside space-y-2">
-                    {scope.assumptions.map((assumption, idx) => (
-                      <li key={idx}>{assumption}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-
-            {/* Export Section */}
-            {currentStep >= 4 && (
-              <div className="bg-white rounded-lg shadow p-6">
-                <ExportButtons 
-                  scope={scope} 
-                  projectId={projectId}
-                  onFinalize={finalizeScope}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Refinement Sidebar - 1 column */}
-          <div className="lg:col-span-1">
-            <RefinementBar 
-              onRefine={handleRefinement}
-              loading={loading}
-              refinements={refinements}
-              currentStep={currentStep}
-              onStepChange={setCurrentStep}
-            />
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 flex items-start gap-2">
+          <AlertTriangle size={20} className="flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Error:</p>
+            <p className="text-sm">{error}</p>
           </div>
         </div>
       )}
 
-      {/* Loading Overlay */}
+      {currentStep === 1 && renderDocumentUpload()}
+      {currentStep === 2 && renderExtractedEntities()}
+      {currentStep >= 3 && renderScope()}
+      {renderPreviewModal()}
+
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-lg shadow-xl text-center">
             <RefreshCw className="animate-spin h-12 w-12 text-blue-500 mx-auto mb-4" />
             <p className="text-lg font-medium">Processing...</p>
-            <p className="text-sm text-gray-600">This may take a few moments</p>
           </div>
         </div>
       )}

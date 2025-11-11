@@ -1,4 +1,4 @@
-# backend/app/main.py
+# backend/app/main.py - FIXED VERSION
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -10,6 +10,7 @@ from app.routers.exports import router as exports_router
 from app.routers.blob import router as blob_router
 from app.routers.ratecards import router as ratecards_router
 from app.routers.project_prompts import router as project_prompts_router
+from app.routers.refinement import router as refinement_router  # ADDED
 from app.auth.router import router as auth_router
 
 
@@ -48,6 +49,7 @@ app.include_router(exports_router, prefix="/api")
 app.include_router(blob_router, prefix="/api")
 app.include_router(ratecards_router, prefix="/api")
 app.include_router(project_prompts_router, prefix="/api")
+app.include_router(refinement_router, prefix="/api")  # ADDED
 
 
 @app.get("/")

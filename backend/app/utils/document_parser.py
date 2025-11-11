@@ -7,13 +7,22 @@ from typing import Dict, Any, Optional
 import google.generativeai as genai
 from app.config.config import settings
 
+# CRITICAL FIX: Configure Gemini with correct model name
 genai.configure(api_key=settings.GEMINI_API_KEY)
 
 class DocumentParser:
     """Enhanced document parser with entity extraction"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        # FIX: Use simple model name without "models/" prefix
+        model_name = settings.GEMINI_MODEL or "gemini-1.5-flash"
+        
+        # Ensure we don't add "models/" prefix
+        if model_name.startswith("models/"):
+            model_name = model_name.replace("models/", "")
+        
+        print(f"🤖 Initializing DocumentParser with model: {model_name}")
+        self.model = genai.GenerativeModel(model_name)
     
     async def parse_document(self, file_path: str, file_type: str) -> Dict[str, Any]:
         """Parse document and extract text"""
@@ -68,7 +77,7 @@ CRITICAL: Return ONLY a valid JSON object. NO markdown, NO backticks, NO extra t
 Extract these fields:
 - project_type: (e.g., "Web Application", "Mobile App", "API Integration")
 - domain: (e.g., "Healthcare", "Finance", "E-commerce")
-- complexity: (one of: "simple", "medium", "complex")
+- complexity: (MUST be one of: "simple", "moderate", "complex", "enterprise")
 - deliverables: (array of main deliverables)
 - tech_stack: (array of technologies mentioned)
 - compliance_requirements: (array of compliance standards like GDPR, HIPAA)
@@ -80,14 +89,20 @@ Extract these fields:
 - scalability_needs: (description of scale requirements)
 - budget_indicators: (any budget/cost mentions)
 
-Document:
+IMPORTANT: For complexity, you MUST use ONLY these exact values:
+- "simple" (for basic projects)
+- "moderate" (for medium complexity - DO NOT USE "medium")
+- "complex" (for advanced projects)
+- "enterprise" (for large-scale enterprise projects)
+
+Document (first 5000 chars):
 {text[:5000]}
 
 Return this exact structure:
 {{
   "project_type": "string",
   "domain": "string",
-  "complexity": "simple|medium|complex",
+  "complexity": "simple|moderate|complex|enterprise",
   "deliverables": ["item1", "item2"],
   "tech_stack": ["tech1", "tech2"],
   "compliance_requirements": ["requirement1"],
@@ -102,8 +117,11 @@ Return this exact structure:
 """
         
         try:
+            print("📤 Sending entity extraction request to Gemini...")
             response = self.model.generate_content(prompt)
             text_response = response.text.strip()
+            
+            print(f"📥 Received response from Gemini")
             
             # Clean response
             text_response = re.sub(r'```json\s*', '', text_response)
@@ -116,12 +134,30 @@ Return this exact structure:
             if start != -1 and end > start:
                 json_str = text_response[start:end]
                 entities = json.loads(json_str)
+                
+                # CRITICAL FIX: Ensure complexity is one of the valid values
+                complexity = entities.get('complexity', 'moderate').lower()
+                
+                # Map any "medium" to "moderate"
+                if complexity == 'medium':
+                    complexity = 'moderate'
+                    print(f"⚠️ Mapped 'medium' to 'moderate'")
+                
+                # Validate complexity
+                valid_complexities = ['simple', 'moderate', 'complex', 'enterprise']
+                if complexity not in valid_complexities:
+                    print(f"⚠️ Invalid complexity '{complexity}', defaulting to 'moderate'")
+                    complexity = 'moderate'
+                
+                entities['complexity'] = complexity
+                
+                print(f"✅ Entity extraction successful - Complexity: {complexity}")
                 return entities
             else:
                 raise ValueError("No JSON object found in response")
                 
         except Exception as e:
-            print(f"Entity extraction error: {e}")
+            print(f"❌ Entity extraction error: {e}")
             return self._get_default_entities()
     
     def _get_default_entities(self) -> Dict[str, Any]:
@@ -129,7 +165,7 @@ Return this exact structure:
         return {
             "project_type": "Not specified",
             "domain": "General",
-            "complexity": "medium",
+            "complexity": "moderate",  # CHANGED: Use "moderate" instead of "medium"
             "deliverables": [],
             "tech_stack": [],
             "compliance_requirements": [],
@@ -145,17 +181,29 @@ Return this exact structure:
     async def parse_and_extract(self, file_path: str, file_type: str) -> Dict[str, Any]:
         """Combined parse and entity extraction"""
         
-        # Parse document
-        parsed_data = await self.parse_document(file_path, file_type)
-        
-        # Extract entities
-        entities = await self.extract_entities(parsed_data['raw_text'])
-        
-        return {
-            'parsed_text': parsed_data,
-            'entities': entities,
-            'extraction_confidence': 'high' if parsed_data['word_count'] > 100 else 'low'
-        }
+        try:
+            # Parse document
+            parsed_data = await self.parse_document(file_path, file_type)
+            
+            # Extract entities
+            entities = await self.extract_entities(parsed_data['raw_text'])
+            
+            return {
+                'parsed_text': parsed_data,
+                'entities': entities,
+                'extraction_confidence': 'high' if parsed_data['word_count'] > 100 else 'low'
+            }
+        except Exception as e:
+            print(f"❌ Parse and extract error: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Return defaults on error
+            return {
+                'parsed_text': {'raw_text': '', 'word_count': 0, 'char_count': 0},
+                'entities': self._get_default_entities(),
+                'extraction_confidence': 'low'
+            }
 
 # Global instance
 document_parser = DocumentParser()

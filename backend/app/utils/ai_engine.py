@@ -37,7 +37,7 @@ async def get_jina_embeddings(text: str) -> List[float]:
             'https://api.jina.ai/v1/embeddings',
             headers=headers,
             json=data,
-            timeout=10
+            timeout=60
         )
         
         if response.status_code == 200:

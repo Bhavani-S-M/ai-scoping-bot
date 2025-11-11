@@ -1,4 +1,5 @@
 # backend/app/routers/exports.py
+# backend/app/routers/exports.py - FIXED VERSION
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,8 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-router = APIRouter(prefix="/api/exports", tags=["exports"])
+# ✅ FIX: Remove /api prefix (main.py already adds it)
+router = APIRouter(prefix="/exports", tags=["exports"])
 current_active_user = fastapi_users.current_user(active=True)
 
 class ExportRequest(BaseModel):
@@ -35,21 +37,16 @@ class ExportRequest(BaseModel):
     scope_data: Dict[str, Any]
     format: str  # 'pdf', 'excel', 'json', 'all'
 
-# ============================================================================
-# STEP 5: EXPORT FUNCTIONALITY
-# ============================================================================
-
 @router.post("/generate")
 async def generate_export(
     export_request: ExportRequest,
     db: AsyncSession = Depends(get_async_session),
     user = Depends(current_active_user)
 ):
-    """
-    Generate exports in various formats
-    Step 5: Download Professional Proposals
-    """
+    """Generate exports in various formats"""
     try:
+        print(f"📥 Export request received: {export_request.format} for project {export_request.project_id}")
+        
         # Verify project access
         result = await db.execute(
             select(ProjectModel).where(
@@ -68,7 +65,9 @@ async def generate_export(
         os.makedirs("exports", exist_ok=True)
         
         if export_format == 'pdf':
+            print("📄 Generating PDF...")
             file_path = await generate_pdf_export(project, scope_data)
+            print(f"✅ PDF generated: {file_path}")
             return FileResponse(
                 file_path,
                 media_type='application/pdf',
@@ -76,7 +75,9 @@ async def generate_export(
             )
         
         elif export_format == 'excel':
+            print("📊 Generating Excel...")
             file_path = await generate_excel_export(project, scope_data)
+            print(f"✅ Excel generated: {file_path}")
             return FileResponse(
                 file_path,
                 media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -84,7 +85,9 @@ async def generate_export(
             )
         
         elif export_format == 'json':
+            print("🔧 Generating JSON...")
             file_path = await generate_json_export(project, scope_data)
+            print(f"✅ JSON generated: {file_path}")
             return FileResponse(
                 file_path,
                 media_type='application/json',
@@ -92,7 +95,9 @@ async def generate_export(
             )
         
         elif export_format == 'all':
+            print("📦 Generating all formats...")
             zip_path = await generate_all_exports(project, scope_data)
+            print(f"✅ ZIP generated: {zip_path}")
             return FileResponse(
                 zip_path,
                 media_type='application/zip',
@@ -105,8 +110,13 @@ async def generate_export(
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Export error: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Export generation failed: {str(e)}")
 
+# [Keep all your existing PDF, Excel, JSON, and ZIP generation functions exactly as they are]
+# ... (rest of the code remains the same)
 # ============================================================================
 # PDF EXPORT
 # ============================================================================
